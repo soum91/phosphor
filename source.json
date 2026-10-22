@@ -1,0 +1,41 @@
+{
+  "name": "Phosphor by soum91",
+  "identifier": "io.github.soum91.phosphor",
+  "subtitle": "Sony Bravia remote over Wi-Fi and IR",
+  "description": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
+  "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
+  "website": "https://github.com/soum91/phosphor",
+  "sourceURL": "https://raw.githubusercontent.com/soum91/phosphor/source/source.json",
+  "tintColor": "7CF0A0",
+  "apps": [
+    {
+      "name": "Phosphor",
+      "bundleIdentifier": "com.soum91.phosphor",
+      "developerName": "soum91",
+      "subtitle": "Sony Bravia remote over Wi-Fi and IR",
+      "localizedDescription": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
+      "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
+      "tintColor": "7CF0A0",
+      "category": "utilities",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "1.0.0.1",
+          "buildVersion": "1",
+          "date": "2026-10-22T00:50:32Z",
+          "localizedDescription": "- Phosphor: Sony Bravia remote over Wi-Fi and IR, with widgets, Control Center and Siri (a845d88)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-1/Phosphor-1.0.0-build-1.ipa",
+          "size": 1531090,
+          "minOSVersion": "18.0"
+        }
+      ],
+      "version": "1.0.0.1",
+      "versionDate": "2026-10-22T00:50:32Z",
+      "versionDescription": "- Phosphor: Sony Bravia remote over Wi-Fi and IR, with widgets, Control Center and Siri (a845d88)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-1/Phosphor-1.0.0-build-1.ipa",
+      "size": 1531090,
+      "appPermissions": {}
+    }
+  ],
+  "news": []
+}
