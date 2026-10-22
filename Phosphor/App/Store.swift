@@ -55,6 +55,7 @@ final class Store: ObservableObject {
 
     // Remote layout and phone volume buttons
     @Published var layout = RemoteLayout.stored { didSet { if layout != oldValue { RemoteLayout.stored = layout } } }
+    @Published var home = HomeLayout.stored { didSet { if home != oldValue { HomeLayout.stored = home } } }
     @Published var phoneVolumeButtons = (UserDefaults.standard.object(forKey: "phoneVolumeButtons") as? Bool) ?? true {
         didSet {
             UserDefaults.standard.set(phoneVolumeButtons, forKey: "phoneVolumeButtons")
@@ -173,6 +174,31 @@ final class Store: ObservableObject {
         }
     }
 
+    /// A remote button, optionally forced over one path (long-press › Send over Wi-Fi / IR).
+    func press(_ k: String, via path: TVPath? = nil) {
+        switch path {
+        case nil:
+            perform(.key(k))
+        case .ir?:
+            guard blaster.isReady else { show("Set up the IR blaster first."); return }
+            testIR(k)
+        case .wifi?:
+            guard tv.hasWiFi else { show("Set up the TV on Wi-Fi first."); return }
+            haptic.impactOccurred()
+            var c = tv
+            c.route = .wifi
+            Task {
+                do {
+                    try await TV.perform(.key(k), cfg: c)
+                    lastPath = .wifi
+                    state = TVState.stored
+                } catch {
+                    show(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func togglePower() {
         switch state.power {
         case true?: perform(.power(false))
@@ -241,17 +267,35 @@ final class Store: ObservableObject {
         adbBusy = true
         adbMessage = "Connecting… if the TV asks \"Allow USB debugging?\", tick Always allow and press Allow."
         defer { adbBusy = false }
+        let adb = ADB(host: tv.host)
+        defer { Task { await adb.close() } }
         do {
-            let pkgs = try await SideApps.list(tv.host, approvalWait: 60)
+            try await adb.connect(approvalWait: 60)
+            let pkgs = try await SideApps.list(adb)
             var next: [SideApp] = []
             for p in pkgs where !sonyListed(p) {
                 next.append(sideApps.first { $0.package == p } ?? SideApp(package: p))
             }
-            // Keep your order for ones already there, new ones at the end.
-            let old = sideApps.map(\.package)
-            next.sort { (old.firstIndex(of: $0.package) ?? Int.max, $0.title) < (old.firstIndex(of: $1.package) ?? Int.max, $1.title) }
+            next.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             sideApps = next
-            adbMessage = next.isEmpty ? "Connected. No sideloaded apps the TV can open." : "Found \(next.count) app\(next.count == 1 ? "" : "s")."
+            // Real names and icons, straight from each APK (only for ones not read yet).
+            let todo = next.filter { $0.label == nil || $0.hasIcon == nil }
+            for (n, app) in todo.enumerated() {
+                adbMessage = "Reading names and icons \(n + 1) of \(todo.count)…"
+                guard let r = try? await APKInfo.read(adb, package: app.package),
+                      let i = sideApps.firstIndex(where: { $0.package == app.package }) else { continue }
+                var a = sideApps[i]
+                if let l = r.label { a.label = l }
+                if let icon = r.icon {
+                    AppGroup.writeData(icon, SideApp.iconFile(app.package))
+                    a.hasIcon = true
+                } else {
+                    a.hasIcon = false
+                }
+                sideApps[i] = a
+            }
+            sideApps.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            adbMessage = sideApps.isEmpty ? "Connected. No sideloaded apps the TV can open." : "Found \(sideApps.count) app\(sideApps.count == 1 ? "" : "s")."
         } catch {
             adbMessage = error.localizedDescription
         }

@@ -27,6 +27,8 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var showKeyboard = false
     @State private var editing: TVPreset?
+    @State private var editMode = false
+    @State private var addingQuick = false
 
     private var isOn: Bool { store.state.power == true }
 
@@ -41,13 +43,9 @@ struct HomeView: View {
                             setupCard
                         } else {
                             if store.authFailed { authCard }
-                            powerAndVolume
-                            quickRow
-                            inputsRow
-                            presetsRow
-                            if cast.status.app != nil && !cast.status.isIdleScreen { NowPlayingCard() }
-                            appsGrid
-                            moreCard
+                            if editMode { editBanner }
+                            ForEach(store.home.sections) { s in section(s) }
+                            if editMode { editFooter }
                         }
                     }
                     .padding(20)
@@ -63,7 +61,87 @@ struct HomeView: View {
             .sheet(isPresented: $showSettings) { SettingsView().environmentObject(store) }
             .sheet(isPresented: $showKeyboard) { KeyboardSheet().environmentObject(store).presentationDetents([.height(260)]) }
             .sheet(item: $editing) { p in PresetEditor(preset: p).environmentObject(store) }
+            .sheet(isPresented: $addingQuick) {
+                ButtonPicker(includeSpecials: true, exclude: store.home.quick) { id in
+                    if store.home.quick.count < HomeLayout.maxQuick { store.home.quick.append(id) }
+                }
+                .environmentObject(store)
+            }
         }
+    }
+
+    // MARK: Sections and edit mode
+
+    @ViewBuilder
+    private func section(_ s: HomeLayout.Section) -> some View {
+        let hidden = store.home.hidden.contains(s)
+        if editMode {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionBar(s, hidden: hidden)
+                if !hidden { content(s) }
+            }
+        } else if !hidden {
+            content(s)
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ s: HomeLayout.Section) -> some View {
+        switch s {
+        case .power: powerAndVolume
+        case .quick: quickRow
+        case .inputs: inputsRow
+        case .presets: presetsRow
+        case .nowPlaying:
+            if cast.status.app != nil && !cast.status.isIdleScreen {
+                NowPlayingCard()
+            } else if editMode {
+                Text("Shows up while something is casting to the TV.").font(.caption).foregroundStyle(.secondary)
+            }
+        case .apps: appsGrid
+        case .sideloaded: sideApps
+        case .settings: moreCard
+        }
+    }
+
+    private func sectionBar(_ s: HomeLayout.Section, hidden: Bool) -> some View {
+        let list = store.home.sections
+        let i = list.firstIndex(of: s) ?? 0
+        return HStack(spacing: 14) {
+            Text(s.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(hidden ? .white.opacity(0.4) : .white)
+            Spacer()
+            Button { withAnimation { store.home.moveSection(s, by: -1) } } label: { Image(systemName: "chevron.up") }
+                .disabled(i == 0)
+            Button { withAnimation { store.home.moveSection(s, by: 1) } } label: { Image(systemName: "chevron.down") }
+                .disabled(i == list.count - 1)
+            Button {
+                withAnimation {
+                    if hidden { store.home.hidden.removeAll { $0 == s } } else { store.home.hidden.append(s) }
+                }
+            } label: { Image(systemName: hidden ? "eye.slash" : "eye") }
+        }
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundStyle(Theme.accent)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Theme.accent.opacity(0.12), in: Capsule())
+        .overlay(Capsule().stroke(Theme.accent.opacity(0.35)))
+    }
+
+    private var editBanner: some View {
+        Text("Drag buttons and apps onto each other to move them, tap − to remove, + to add. Arrows move whole sections, the eye hides one.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var editFooter: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !store.home.hiddenApps.isEmpty {
+                Button("Show \(store.home.hiddenApps.count) hidden app\(store.home.hiddenApps.count == 1 ? "" : "s")") {
+                    store.home.hiddenApps = []
+                }
+            }
+            Button("Reset the home page", role: .destructive) { withAnimation { store.home = HomeLayout() } }
+        }
+        .font(.callout.weight(.semibold))
     }
 
     // MARK: Header
@@ -97,6 +175,15 @@ struct HomeView: View {
                 }
             }
             Spacer()
+            if store.isSetUp {
+                Button { withAnimation(.spring(response: 0.3)) { editMode.toggle() } } label: {
+                    Image(systemName: editMode ? "checkmark" : "square.and.pencil")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 42, height: 42)
+                        .background(editMode ? Theme.accent : Theme.card, in: Circle())
+                        .foregroundStyle(editMode ? .black : .white)
+                }
+            }
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 18, weight: .semibold))
@@ -205,29 +292,62 @@ struct HomeView: View {
     // MARK: Quick buttons
 
     private var quickRow: some View {
-        HStack(spacing: 0) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 5), spacing: 14) {
+            ForEach(store.home.quick, id: \.self) { id in
+                quickButton(id)
+                    .editable(editMode, id: "q:" + id,
+                              onRemove: { withAnimation { store.home.quick.removeAll { $0 == id } } },
+                              onDrop: { d in moveQuick(d, before: id) })
+            }
+            if editMode && store.home.quick.count < HomeLayout.maxQuick {
+                AddTile(size: 52) { addingQuick = true }
+            }
+        }
+        .card()
+    }
+
+    private func moveQuick(_ dragged: String, before target: String) {
+        guard dragged.hasPrefix("q:") else { return }
+        let d = String(dragged.dropFirst(2))
+        var q = store.home.quick
+        guard let from = q.firstIndex(of: d) else { return }
+        q.remove(at: from)
+        q.insert(d, at: q.firstIndex(of: target) ?? q.count)
+        withAnimation { store.home.quick = q }
+    }
+
+    @ViewBuilder
+    private func quickButton(_ id: String) -> some View {
+        switch id {
+        case "screen":
             KeyButton(symbol: store.state.screenOff == true ? "tv" : "tv.slash", label: store.state.screenOff == true ? "Screen on" : "Screen off",
                       size: 52, filled: store.state.screenOff == true) {
                 store.perform(.screen(store.state.screenOff == true))
             }
-            .frame(maxWidth: .infinity)
-            KeyButton(symbol: "house.fill", label: "Home", size: 52) { store.perform(.key("Home")) }
-                .frame(maxWidth: .infinity)
-            KeyButton(symbol: "arrow.uturn.backward", label: "Back", size: 52) { store.perform(.key("Return")) }
-                .frame(maxWidth: .infinity)
+        case "type":
             KeyButton(symbol: "keyboard", label: "Type", size: 52) { showKeyboard = true }
-                .frame(maxWidth: .infinity)
                 .disabled(!store.tv.hasWiFi)
-            KeyButton(symbol: "playpause.fill", label: "Play/Pause", size: 52) {
-                if cast.status.media != nil { cast.playPause() } else { store.perform(.key(store.state.input == "Apps" ? "Pause" : "Play")) }
+        case "playpause":
+            let b = KeyButton(symbol: "playpause.fill", label: "Play/Pause", size: 52) {
+                if cast.status.media != nil { cast.playPause() } else { store.press(store.state.input == "Apps" ? "Pause" : "Play") }
             }
-            .frame(maxWidth: .infinity)
-            .contextMenu {
-                Button { store.perform(.key("Play")) } label: { Label("Play", systemImage: "play.fill") }
-                Button { store.perform(.key("Pause")) } label: { Label("Pause", systemImage: "pause.fill") }
+            if editMode {
+                b
+            } else {
+                b.contextMenu {
+                    Button { store.press("Play") } label: { Label("Play", systemImage: "play.fill") }
+                    Button { store.press("Pause") } label: { Label("Pause", systemImage: "pause.fill") }
+                }
+            }
+        default:
+            let b = KeyButton(symbol: Keys.def(id)?.symbol, label: Keys.label(id), size: 52, tint: RemoteFace.tint(id),
+                              badge: store.codes[id] != nil) { store.press(id) }
+            if editMode {
+                b
+            } else {
+                b.contextMenu { RouteMenu(store: store, key: id) }
             }
         }
-        .card()
     }
 
     // MARK: Inputs
@@ -290,6 +410,24 @@ struct HomeView: View {
 
     // MARK: Apps
 
+    private var visibleApps: [BraviaApp] {
+        store.home.ordered(store.apps.filter { !store.home.hiddenApps.contains($0.uri) }, id: \.uri)
+    }
+
+    private var visibleSide: [SideApp] {
+        store.home.ordered(store.sideApps.filter { !store.home.hiddenApps.contains("side:" + $0.package) }, id: { "side:" + $0.package })
+    }
+
+    private func dropApp(_ dragged: String, before target: String) {
+        guard dragged.hasPrefix("a:") else { return }
+        let ids = visibleApps.map(\.uri) + visibleSide.map { "side:" + $0.package }
+        withAnimation { store.home.moveApp(String(dragged.dropFirst(2)), before: target, visible: ids) }
+    }
+
+    private func hideApp(_ id: String) {
+        withAnimation { store.home.hiddenApps.append(id) }
+    }
+
     private var appsGrid: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(text: "Apps")
@@ -299,13 +437,21 @@ struct HomeView: View {
                     .card()
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 12)], spacing: 14) {
-                    ForEach(store.apps) { a in
-                        Button { store.open(a) } label: { AppTile(app: a) }
-                            .buttonStyle(PressStyle())
+                    ForEach(visibleApps) { a in
+                        let tile = Button { store.open(a) } label: { AppTile(app: a) }.buttonStyle(PressStyle())
+                        Group {
+                            if editMode {
+                                tile
+                            } else {
+                                tile.contextMenu {
+                                    Button(role: .destructive) { hideApp(a.uri) } label: { Label("Hide", systemImage: "eye.slash") }
+                                }
+                            }
+                        }
+                        .editable(editMode, id: "a:" + a.uri, onRemove: { hideApp(a.uri) }, onDrop: { d in dropApp(d, before: a.uri) })
                     }
                 }
             }
-            sideApps
         }
     }
 
@@ -315,16 +461,33 @@ struct HomeView: View {
     @ViewBuilder
     private var sideApps: some View {
         if !store.sideApps.isEmpty {
-            SectionTitle(text: "Sideloaded").padding(.top, 8)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 12)], spacing: 14) {
-                ForEach(store.sideApps) { a in
-                    Button { store.open(a) } label: { SideTile(app: a) }
-                        .buttonStyle(PressStyle())
-                        .contextMenu {
-                            Button { newName = a.title; renaming = a } label: { Label("Rename", systemImage: "pencil") }
-                            Button(role: .destructive) { store.hide(a) } label: { Label("Hide", systemImage: "eye.slash") }
-                            Text(a.package)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    SectionTitle(text: "Sideloaded")
+                    Spacer()
+                    if store.adbBusy { ProgressView().controlSize(.small) }
+                    Button { Task { await store.loadSideApps() } } label: { Image(systemName: "arrow.clockwise") }
+                        .font(.caption.weight(.bold))
+                        .disabled(store.adbBusy)
+                }
+                if store.adbBusy, let m = store.adbMessage { Text(m).font(.caption).foregroundStyle(.secondary) }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 12)], spacing: 14) {
+                    ForEach(visibleSide) { a in
+                        let id = "side:" + a.package
+                        let tile = Button { store.open(a) } label: { SideTile(app: a) }.buttonStyle(PressStyle())
+                        Group {
+                            if editMode {
+                                tile
+                            } else {
+                                tile.contextMenu {
+                                    Button { newName = a.title; renaming = a } label: { Label("Rename", systemImage: "pencil") }
+                                    Button(role: .destructive) { hideApp(id) } label: { Label("Hide", systemImage: "eye.slash") }
+                                    Text(a.package)
+                                }
+                            }
                         }
+                        .editable(editMode, id: "a:" + id, onRemove: { hideApp(id) }, onDrop: { d in dropApp(d, before: id) })
+                    }
                 }
             }
             .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -422,6 +585,26 @@ struct SideTile: View {
 
     var body: some View {
         VStack(spacing: 6) {
+            if let d = app.iconData, let img = UIImage(data: d) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 62, height: 62)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Theme.stroke))
+            } else {
+                monogram
+            }
+            Text(app.title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var monogram: some View {
             ZStack {
                 RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.black)
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -433,13 +616,25 @@ struct SideTile: View {
                     .shadow(color: Color(hue: hue, saturation: 0.8, brightness: 1), radius: 8)
             }
             .frame(width: 62, height: 62)
-            Text(app.title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.75))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+    }
+}
+
+/// Long-press menu on a remote button: pick the path for this one press.
+struct RouteMenu: View {
+    @ObservedObject var store: Store
+    let key: String
+
+    var body: some View {
+        Button { store.press(key, via: .wifi) } label: { Label("Send over Wi-Fi", systemImage: "wifi") }
+            .disabled(!store.tv.hasWiFi)
+        Button { store.press(key, via: .ir) } label: { Label("Send over IR", systemImage: "dot.radiowaves.right") }
+            .disabled(!store.blaster.isReady)
+        if store.blaster.isReady {
+            Button { store.startLearn(key) } label: { Label("Learn from remote", systemImage: "record.circle") }
         }
-        .frame(maxWidth: .infinity)
+        if store.codes[key] != nil {
+            Button(role: .destructive) { store.codes[key] = nil } label: { Label("Forget learned code", systemImage: "trash") }
+        }
     }
 }
 

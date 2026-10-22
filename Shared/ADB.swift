@@ -15,10 +15,17 @@ struct ADBError: LocalizedError {
 /// A sideloaded (or any non-Sony-listed) app, found over ADB.
 struct SideApp: Codable, Hashable, Identifiable {
     var package: String
-    /// Your name for it; otherwise one made from the package.
+    /// Your name for it.
     var name: String?
+    /// The app's own name, read from its APK.
+    var label: String?
+    /// True once its icon has been saved (icons/<package>.png in the App Group).
+    var hasIcon: Bool?
     var id: String { package }
-    var title: String { name ?? SideApp.guessName(package) }
+    var title: String { name ?? label ?? SideApp.guessName(package) }
+
+    static func iconFile(_ pkg: String) -> String { "icon-\(pkg).png" }
+    var iconData: Data? { hasIcon == true ? AppGroup.readData(SideApp.iconFile(package)) : nil }
 
     static let known: [String: String] = [
         "com.teamsmart.videomanager.tv": "SmartTube",
@@ -201,7 +208,7 @@ actor ADB {
     private var inbox: [Message] = []
     private var closed = false
     private var nextID: UInt32 = 1
-    private var maxData = 4096
+    private var maxData = 256 * 1024
 
     init(host: String, port: UInt16 = 5555) {
         self.host = host
@@ -340,12 +347,13 @@ enum SideApps {
     }
 
     /// Third-party packages that have a launcher activity (TV or phone).
-    static func list(_ host: String, approvalWait: Double = 0) async throws -> [String] {
-        let r = try await run(host, [
-            "pm list packages -3",
-            "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER",
-            "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER",
-        ], approvalWait: approvalWait)
+    static func list(_ adb: ADB) async throws -> [String] {
+        var r: [String] = []
+        for c in ["pm list packages -3",
+                  "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER",
+                  "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"] {
+            r.append(try await adb.shell(c))
+        }
         let third = r[0].split(whereSeparator: \.isNewline).compactMap { line -> String? in
             let s = line.trimmingCharacters(in: .whitespaces)
             return s.hasPrefix("package:") ? String(s.dropFirst(8)) : nil

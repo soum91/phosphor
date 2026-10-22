@@ -9,6 +9,8 @@ struct RemoteView: View {
     @State private var importing = false
     @State private var irOnly = false
     @State private var editingLayout = false
+    @State private var editing = false
+    @State private var addingTo: String?
 
     private let columns = [GridItem(.adaptive(minimum: 76), spacing: 10)]
 
@@ -17,7 +19,8 @@ struct RemoteView: View {
             Theme.background(learnMode ? Color(red: 1, green: 0.4, blue: 0.4) : Theme.accent, strength: 0.16)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    RemoteFace(tap: tap)
+                    RemoteFace(tap: tap, editing: editing, onAdd: { addingTo = $0 })
+                    if !editing {
                     SectionTitle(text: "Every button")
                     if learnMode {
                         Text("Learn mode: tap a button here, then press the same button on your Sony remote, aimed at the blaster.")
@@ -40,14 +43,15 @@ struct RemoteView: View {
                                                   badge: store.codes[k.id] != nil) {
                                             tap(k)
                                         }
-                                        .contextMenu { menu(k) }
+                                        .contextMenu { RouteMenu(store: store, key: k.id) }
                                     }
                                 }
                             }
                         }
                     }
-                    Text("A dot means the button was learned from your remote. The rest use Sony's codes: the TV's own list over Wi-Fi, turned into SIRC for IR. If one does nothing over IR, long-press it and learn it.")
+                    Text("A dot means the button was learned from your remote. The rest use Sony's codes: the TV's own list over Wi-Fi, turned into SIRC for IR. Long-press any button to send it over Wi-Fi or IR, or to learn it.")
                         .font(.caption).foregroundStyle(.white.opacity(0.4))
+                    }
                 }
                 .padding(20)
                 .padding(.bottom, 40)
@@ -57,13 +61,17 @@ struct RemoteView: View {
         .navigationTitle("Remote")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(editing ? "Done" : "Edit") { withAnimation(.spring(response: 0.3)) { editing.toggle() } }
+                    .fontWeight(.semibold)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Toggle(isOn: $learnMode) { Label("Learn mode", systemImage: "record.circle") }
                         .disabled(!store.blaster.isReady)
                     Toggle(isOn: $irOnly) { Label("Always send IR", systemImage: "dot.radiowaves.right") }
                         .disabled(!store.blaster.isReady)
-                    Button { editingLayout = true } label: { Label("Rearrange buttons", systemImage: "square.grid.3x3.square") }
+                    Button { editingLayout = true } label: { Label("Layout as a list", systemImage: "list.bullet") }
                     Button { importing = true } label: { Label("Import from Redshift", systemImage: "square.and.arrow.down") }
                     Button { Task { await store.loadLists() } } label: { Label("Reload the TV's buttons", systemImage: "arrow.clockwise") }
                         .disabled(!store.tv.hasWiFi)
@@ -74,25 +82,21 @@ struct RemoteView: View {
             }
         }
         .sheet(isPresented: $editingLayout) { LayoutEditor().environmentObject(store) }
+        .sheet(item: Binding(get: { addingTo.map { AddTarget(id: $0) } }, set: { addingTo = $0?.id })) { t in
+            ButtonPicker(exclude: store.layout.blocks.first { $0.id == t.id }?.keys ?? []) { k in
+                if let i = store.layout.blocks.firstIndex(where: { $0.id == t.id }), store.layout.blocks[i].keys.count < RemoteLayout.maxPerRow {
+                    store.layout.blocks[i].keys.append(k)
+                }
+            }
+            .environmentObject(store)
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { r in
             if case .success(let url) = r { store.importRedshift(from: url) }
         }
     }
 
-    @ViewBuilder
-    private func menu(_ k: KeyDef) -> some View {
-        if store.blaster.isReady {
-            Button { store.startLearn(k.id) } label: { Label("Learn from remote", systemImage: "record.circle") }
-            Button { store.testIR(k.id) } label: { Label("Send over IR", systemImage: "dot.radiowaves.right") }
-        }
-        if store.codes[k.id] != nil {
-            Button(role: .destructive) { store.codes[k.id] = nil } label: {
-                Label("Forget learned code", systemImage: "trash")
-            }
-        }
-    }
-
     private func tap(_ k: KeyDef) {
+        if editing { return }
         if learnMode {
             store.startLearn(k.id)
         } else if irOnly {
@@ -152,9 +156,13 @@ struct LearnSheet: View {
 
 /// The remote laid out like the Bravia one: power and input up top, the d-pad ring, back/home/options,
 /// volume and channel rockers, transport, then the app and color buttons.
+private struct AddTarget: Identifiable { let id: String }
+
 struct RemoteFace: View {
     @EnvironmentObject var store: Store
     let tap: (KeyDef) -> Void
+    var editing = false
+    var onAdd: (String) -> Void = { _ in }
 
     static func tint(_ id: String) -> Color {
         switch id {
@@ -224,15 +232,115 @@ struct RemoteFace: View {
         .frame(width: 210, height: 210)
     }
 
-    private func row(_ keys: [String]) -> some View {
-        let size: CGFloat = keys.count >= 5 ? 48 : (keys.allSatisfy { ["Red", "Green", "Yellow", "Blue"].contains($0) } ? 44 : 54)
+    private func row(_ b: RemoteBlock) -> some View {
+        let keys = b.keys
+        let size: CGFloat = keys.count >= 5 ? 48 : (!keys.isEmpty && keys.allSatisfy { ["Red", "Green", "Yellow", "Blue"].contains($0) } ? 44 : 54)
         return HStack {
             ForEach(Array(keys.enumerated()), id: \.offset) { i, k in
                 if i > 0 { Spacer(minLength: 4) }
-                key(k, size: size)
+                rowKey(b.id, k, size)
+            }
+            if editing && keys.count < RemoteLayout.maxPerRow {
+                if !keys.isEmpty { Spacer(minLength: 4) }
+                AddTile(size: min(size, 48)) { onAdd(b.id) }
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let d = items.first else { return false }
+                        move(d, to: b.id, before: nil)
+                        return true
+                    }
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func rowKey(_ blockID: String, _ k: String, _ size: CGFloat) -> some View {
+        Group {
+            if editing {
+                key(k, size: size)
+            } else {
+                key(k, size: size).contextMenu { RouteMenu(store: store, key: k) }
+            }
+        }
+        .editable(editing, id: "k:\(blockID):\(k)",
+                  onRemove: { remove(blockID, k) },
+                  onDrop: { d in move(d, to: blockID, before: k) })
+    }
+
+    private func remove(_ blockID: String, _ k: String) {
+        guard let i = store.layout.blocks.firstIndex(where: { $0.id == blockID }) else { return }
+        withAnimation { store.layout.blocks[i].keys.removeAll { $0 == k } }
+    }
+
+    /// Moves a dragged button ("k:<row>:<key>") into a row, before `target` (or at the end).
+    private func move(_ dragged: String, to blockID: String, before target: String?) {
+        let parts = dragged.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count == 3, parts[0] == "k" else { return }
+        var blocks = store.layout.blocks
+        guard let si = blocks.firstIndex(where: { $0.id == parts[1] }),
+              let ti = blocks.firstIndex(where: { $0.id == blockID }) else { return }
+        let k = parts[2]
+        if si != ti {
+            guard blocks[ti].keys.count < RemoteLayout.maxPerRow, !blocks[ti].keys.contains(k) else {
+                store.show("That row is full or already has it.")
+                return
+            }
+        }
+        blocks[si].keys.removeAll { $0 == k }
+        let at = target.flatMap { blocks[ti].keys.firstIndex(of: $0) } ?? blocks[ti].keys.count
+        blocks[ti].keys.insert(k, at: at)
+        withAnimation { store.layout.blocks = blocks }
+    }
+
+    private func moveBlock(_ id: String, by delta: Int) {
+        var blocks = store.layout.blocks
+        guard let i = blocks.firstIndex(where: { $0.id == id }) else { return }
+        let j = max(0, min(blocks.count - 1, i + delta))
+        let b = blocks.remove(at: i)
+        blocks.insert(b, at: j)
+        withAnimation { store.layout.blocks = blocks }
+    }
+
+    private func blockBar(_ b: RemoteBlock) -> some View {
+        let i = store.layout.blocks.firstIndex(of: b) ?? 0
+        return HStack(spacing: 16) {
+            Text(b.kind == .keys ? "Row" : (b.kind == .dpad ? "D-pad" : "Volume and channel"))
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+            Spacer()
+            Button { moveBlock(b.id, by: -1) } label: { Image(systemName: "chevron.up") }.disabled(i == 0)
+            Button { moveBlock(b.id, by: 1) } label: { Image(systemName: "chevron.down") }.disabled(i == store.layout.blocks.count - 1)
+            Button { withAnimation { store.layout.blocks.removeAll { $0.id == b.id } } } label: { Image(systemName: "trash") }
+                .foregroundStyle(Theme.danger)
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(Theme.accent)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Theme.accent.opacity(0.1), in: Capsule())
+    }
+
+    private var editFooter: some View {
+        VStack(spacing: 10) {
+            Button { withAnimation { store.layout.blocks.append(.row([])) } } label: {
+                Label("Add a row", systemImage: "plus.rectangle.on.rectangle").frame(maxWidth: .infinity)
+            }
+            if !store.layout.blocks.contains(where: { $0.kind == .dpad }) {
+                Button { withAnimation { store.layout.blocks.append(RemoteBlock(kind: .dpad)) } } label: {
+                    Label("Add the d-pad", systemImage: "dpad").frame(maxWidth: .infinity)
+                }
+            }
+            if !store.layout.blocks.contains(where: { $0.kind == .rockers }) {
+                Button { withAnimation { store.layout.blocks.append(RemoteBlock(kind: .rockers)) } } label: {
+                    Label("Add volume and channel", systemImage: "plusminus").frame(maxWidth: .infinity)
+                }
+            }
+            Button(role: .destructive) { withAnimation { store.layout = .standard } } label: {
+                Text("Reset to the standard layout").frame(maxWidth: .infinity)
+            }
+            Text("Drag a button onto another to move it there (across rows too), tap − to remove, + to add.")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(Theme.accent)
     }
 
     private var rockers: some View {
@@ -254,11 +362,7 @@ struct RemoteFace: View {
         case .dpad: dpad.frame(maxWidth: .infinity)
         case .rockers: rockers
         case .keys:
-            if b.keys.count == 1 {
-                key(b.keys[0]).frame(maxWidth: .infinity)
-            } else {
-                row(b.keys)
-            }
+            row(b)
         }
     }
 
@@ -275,12 +379,16 @@ struct RemoteFace: View {
                 key("Input", size: 60)
             }
             ForEach(store.layout.blocks) { b in
-                if b.kind == .keys && b.keys.isEmpty {
-                    EmptyView()
-                } else {
+                if editing {
+                    VStack(spacing: 10) {
+                        blockBar(b)
+                        block(b)
+                    }
+                } else if !(b.kind == .keys && b.keys.isEmpty) {
                     block(b)
                 }
             }
+            if editing { editFooter }
         }
         .padding(22)
         .background(
