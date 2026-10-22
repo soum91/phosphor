@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.4",
+          "buildVersion": "4",
+          "date": "2026-10-22T18:18:27Z",
+          "localizedDescription": "- Real names and icons for sideloaded apps, edit mode on the home page and remote, Wi-Fi/IR per press (5186788)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-4/Obsidian-1.0.0-build-4.ipa",
+          "size": 2342639,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.3",
           "buildVersion": "3",
           "date": "2026-10-22T17:59:36Z",
@@ -47,11 +56,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.3",
-      "versionDate": "2026-10-22T17:59:36Z",
-      "versionDescription": "- Obsidian: new name and neon OLED icon, sideloaded apps over ADB, rearrangeable remote with TV key, iPhone volume buttons (837f623)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-3/Obsidian-1.0.0-build-3.ipa",
-      "size": 2158854,
+      "version": "1.0.0.4",
+      "versionDate": "2026-10-22T18:18:27Z",
+      "versionDescription": "- Real names and icons for sideloaded apps, edit mode on the home page and remote, Wi-Fi/IR per press (5186788)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-4/Obsidian-1.0.0-build-4.ipa",
+      "size": 2342639,
       "appPermissions": {}
     }
   ],
