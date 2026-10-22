@@ -123,6 +123,9 @@ enum IRCommand {
     }
 
     static func study(_ f: IRFormat) -> [String: JSONValue] { mode("study", f) }
+
+    /// Harmless commands that make a quiet blaster answer, used to prove the local key on protocol 3.3.
+    static let probes: [[String: JSONValue]] = [studyExit(.classic), studyExit(.modern)]
     static func studyExit(_ f: IRFormat) -> [String: JSONValue] { mode("study_exit", f) }
 
     /// A learned code in a status report, and which format it came in on.

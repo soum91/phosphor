@@ -232,6 +232,13 @@ struct BlasterStatusView: View {
                     Text(store.blasterState.text)
                         .font(.callout)
                         .foregroundStyle(store.blasterState.isConnected ? Theme.accent : (store.blasterState == .off ? .secondary : Theme.danger))
+                    if !store.blasterLog.isEmpty {
+                        DisclosureGroup("What each device said") {
+                            ForEach(store.blasterLog, id: \.self) { line in
+                                Text(line).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                        }
+                    }
                     if let h = store.blaster.host { LabeledContent("IP", value: h) }
                     LabeledContent("Command format", value: store.blaster.format.title)
                 }

@@ -7,6 +7,8 @@ struct DeviceInfo: Codable, Hashable, Identifiable {
     var productName: String
     var online: Bool
     var localKey: String?
+    /// Paired through a hub (Zigbee/BLE gateway) rather than on Wi-Fi itself.
+    var isSub: Bool = false
 
     static func parse(_ d: [String: Any]) -> DeviceInfo? {
         guard let id = d["id"] as? String else { return nil }
@@ -15,7 +17,8 @@ struct DeviceInfo: Codable, Hashable, Identifiable {
                           category: (d["category"] as? String) ?? "",
                           productName: (d["product_name"] as? String) ?? (d["productName"] as? String) ?? "",
                           online: (d["online"] as? Bool) ?? ((d["online"] as? NSNumber)?.boolValue ?? true),
-                          localKey: (d["local_key"] as? String) ?? (d["localKey"] as? String))
+                          localKey: (d["local_key"] as? String) ?? (d["localKey"] as? String),
+                          isSub: (d["sub"] as? Bool) ?? ((d["sub"] as? NSNumber)?.boolValue ?? false))
     }
 
     /// "wnykq" is Tuya's universal remote (IR blaster) category.

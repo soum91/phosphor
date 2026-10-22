@@ -2,6 +2,7 @@ import Foundation
 import Network
 import CryptoKit
 import CommonCrypto
+import Darwin
 
 /// Tuya's LAN protocol (3.3, 3.4 and 3.5), ported from tinytuya. Talking to the device directly
 /// exposes every raw data point, including the ones Tuya's cloud API hides (fan speed, display).
@@ -16,6 +17,10 @@ struct TuyaFrame {
     let seq: UInt32
     let cmd: UInt32
     let payload: [UInt8]
+    /// The device's return code, when the frame carried one (0 = OK).
+    var retcode: UInt32? = nil
+    /// True when the frame provably came from a device holding our key (padding/HMAC/GCM checked out).
+    var verified = false
 
     var json: [String: Any]? {
         guard let start = payload.firstIndex(of: UInt8(ascii: "{")) else { return nil }
@@ -82,6 +87,16 @@ enum LocalCrypto {
         return ecb(CCOperation(kCCEncrypt), input, key)
     }
 
+    /// Only returns a result when the PKCS7 padding is intact, which a wrong key almost never produces.
+    static func ecbDecryptStrict(_ data: [UInt8], key: [UInt8]) -> [UInt8]? {
+        guard !data.isEmpty, data.count % 16 == 0 else { return nil }
+        var out = ecb(CCOperation(kCCDecrypt), data, key)
+        guard let last = out.last, last >= 1, last <= 16, Int(last) <= out.count,
+              out.suffix(Int(last)).allSatisfy({ $0 == last }) else { return nil }
+        out.removeLast(Int(last))
+        return out
+    }
+
     static func ecbDecrypt(_ data: [UInt8], key: [UInt8]) -> [UInt8]? {
         guard !data.isEmpty, data.count % 16 == 0 else { return nil }
         var out = ecb(CCOperation(kCCDecrypt), data, key)
@@ -123,6 +138,12 @@ final class TuyaCodec {
         self.version = version
         realKey = Array(localKey.utf8)
         key = realKey
+    }
+
+    init(version: Double, keyBytes: [UInt8]) {
+        self.version = version
+        realKey = keyBytes
+        key = keyBytes
     }
 
     private var versionTag: [UInt8] { Array(String(format: "%.1f", version).utf8) }
@@ -175,11 +196,20 @@ final class TuyaCodec {
                 let endLen = version >= 3.4 ? 36 : 8
                 guard total >= 16 + endLen else { continue }
                 var body = Array(frame[16..<(total - endLen)])
+                var retcode: UInt32?
                 if body.count >= 4, body[0] == 0, body[1] == 0, body[2] == 0,
                    version < 3.4 || body.count % 16 == 4 {
+                    retcode = body.be32(0)
                     body.removeFirst(4)   // return code
                 }
-                frames.append(TuyaFrame(seq: frame.be32(4), cmd: frame.be32(8), payload: decrypt55AA(body)))
+                var macOK = false
+                if version >= 3.4 {
+                    let mac = Array(frame[(total - 36)..<(total - 4)])
+                    macOK = LocalCrypto.hmac(Array(frame[0..<(total - 36)]), key: key) == mac
+                }
+                let (plain, decryptedOK) = decrypt55AA(body)
+                frames.append(TuyaFrame(seq: frame.be32(4), cmd: frame.be32(8), payload: plain, retcode: retcode,
+                                        verified: version >= 3.4 ? macOK : decryptedOK))
             } else {
                 guard buffer.count >= 18 else { break }
                 let len = Int(buffer.be32(14))
@@ -193,28 +223,51 @@ final class TuyaCodec {
                 let tag = Array(frame[(total - 20)..<(total - 4)])
                 let ct = Array(frame[30..<(total - 20)])
                 guard var plain = try? LocalCrypto.gcmOpen(ct, tag: tag, key: key, iv: iv, aad: Array(frame[4..<18])) else { continue }
-                if plain.count >= 4 { plain.removeFirst(4) }   // return code
+                var retcode: UInt32?
+                if plain.count >= 4, plain.first != UInt8(ascii: "{") {
+                    retcode = plain.be32(0)
+                    plain.removeFirst(4)   // return code
+                }
                 if plain.hasPrefixBytes(versionTag) { plain.removeFirst(min(15, plain.count)) }
-                frames.append(TuyaFrame(seq: frame.be32(6), cmd: frame.be32(10), payload: plain))
+                frames.append(TuyaFrame(seq: frame.be32(6), cmd: frame.be32(10), payload: plain, retcode: retcode, verified: true))
             }
         }
         return frames
     }
 
-    private func decrypt55AA(_ body: [UInt8]) -> [UInt8] {
+    /// The plain payload, and whether it decrypted cleanly with our key into something that reads as a reply.
+    private func decrypt55AA(_ body: [UInt8]) -> ([UInt8], Bool) {
         var b = body
         if version >= 3.4 {
-            guard var plain = LocalCrypto.ecbDecrypt(b, key: key) else { return b }
+            guard var plain = LocalCrypto.ecbDecrypt(b, key: key) else { return (b, false) }
             if plain.hasPrefixBytes(versionTag) { plain.removeFirst(min(15, plain.count)) }
-            return plain
+            return (plain, true)
         }
         if b.hasPrefixBytes(versionTag) { b.removeFirst(min(15, b.count)) }
-        if b.first == UInt8(ascii: "{") { return b }
-        return LocalCrypto.ecbDecrypt(b, key: key) ?? b
+        if b.first == UInt8(ascii: "{") { return (b, false) }
+        if let strict = LocalCrypto.ecbDecryptStrict(b, key: key) {
+            let text = String(decoding: strict, as: UTF8.self)
+            return (strict, strict.first == UInt8(ascii: "{") || text.contains("unvalid"))
+        }
+        return (LocalCrypto.ecbDecrypt(b, key: key) ?? b, false)
     }
 }
 
 // MARK: - Connection
+
+enum KeyProof: Int, Comparable, Sendable {
+    /// The device acknowledged a command but never said anything we could decrypt.
+    case weak = 1
+    /// Something came back encrypted with our key (or the 3.4/3.5 handshake checked out).
+    case strong = 2
+    static func < (a: KeyProof, b: KeyProof) -> Bool { a.rawValue < b.rawValue }
+}
+
+struct DetectResult: Sendable {
+    let link: LocalLink
+    let dps: [String: JSONValue]
+    let proof: KeyProof
+}
 
 final class OnceFlag: @unchecked Sendable {
     private var done = false
@@ -301,7 +354,7 @@ actor LocalLink {
             return try await waitDPS([TuyaCmd.controlNew, TuyaCmd.dpQuery, TuyaCmd.status], timeout: replyTimeout)
         }
         try await send(TuyaCmd.dpQuery, json: ["gwId": devId, "devId": devId, "uid": devId, "t": t])
-        let frame = try await wait([TuyaCmd.dpQuery], timeout: replyTimeout)
+        let frame = try await wait([TuyaCmd.dpQuery, TuyaCmd.status], timeout: replyTimeout)
         if frame.text.contains("data unvalid") {
             device22 = true
             return try await query()
@@ -316,6 +369,45 @@ actor LocalLink {
     func statusAfterOpen() async throws -> [String: JSONValue] {
         if version >= 3.4 { return (try? await query()) ?? [:] }
         return try await query()
+    }
+
+    /// Proves this device holds our key, and how sure we are. 3.4/3.5 prove it in the handshake.
+    /// On 3.3 a status reply that decrypts with our key proves it; devices that never answer status
+    /// (Tuya IR blasters) get a harmless command instead, and their reply or acknowledgement counts.
+    func verify(probe: [[String: JSONValue]]) async throws -> ([String: JSONValue], KeyProof) {
+        if version >= 3.4 { return ((try? await query()) ?? [:], .strong) }
+        inbox.removeAll()
+        let t = String(Int(Date().timeIntervalSince1970))
+        try await send(TuyaCmd.dpQuery, json: ["gwId": devId, "devId": devId, "uid": devId, "t": t])
+        if let f = try? await wait([TuyaCmd.dpQuery, TuyaCmd.status], timeout: replyTimeout) {
+            if f.text.contains("data unvalid") {
+                device22 = true
+                if f.verified { return ((try? await query()) ?? [:], .strong) }
+                if let dps = try? await query(), !dps.isEmpty { return (dps, .weak) }
+            } else if f.verified {
+                return (f.dps ?? [:], .strong)
+            } else if let dps = f.dps {
+                return (dps, .weak)
+            }
+        }
+        guard isOpen else { throw LocalError("closed the connection (another app or Smart Life may be connected to it)") }
+        var ackedAt: Date?
+        for p in probe {
+            inbox.removeAll()
+            try await set(p)
+            let deadline = Date().addingTimeInterval(min(replyTimeout, 2.5))
+            while Date() < deadline {
+                if let f = inbox.first(where: { $0.verified }) { return (f.dps ?? [:], .strong) }
+                if ackedAt == nil, inbox.contains(where: { [TuyaCmd.control, TuyaCmd.controlNew].contains($0.cmd) && $0.retcode == 0 }) {
+                    ackedAt = .now
+                }
+                if let a = ackedAt, Date().timeIntervalSince(a) > 0.8 { break }
+                guard isOpen else { throw LocalError("closed the connection after a command (wrong key?)") }
+                try await Task.sleep(nanoseconds: 40_000_000)
+            }
+        }
+        if ackedAt != nil { return ([:], .weak) }
+        throw LocalError(probe.isEmpty ? "no answer to a status query" : "no answer to a status query or a command")
     }
 
     func set(_ dps: [String: JSONValue]) async throws {
@@ -472,22 +564,38 @@ actor LocalLink {
 
     /// Tries each protocol version and returns an open link plus the first status it read.
     static func detect(devId: String, host: String, localKey: String, knownDPs: [String], timeout: Double = 4,
-                       versions: [Double] = [3.3, 3.4, 3.5],
+                       versions: [Double] = [3.3, 3.4, 3.5], probe: [[String: JSONValue]] = [],
                        onDPS: @escaping @Sendable ([String: JSONValue]) -> Void,
                        onClose: @escaping @Sendable (String) -> Void) async throws -> (LocalLink, [String: JSONValue]) {
-        var lastError: Error = LocalError("Couldn't talk to the device.")
+        let r = try await detectFull(devId: devId, host: host, localKey: localKey, knownDPs: knownDPs, timeout: timeout,
+                                     versions: versions, probe: probe, onDPS: onDPS, onClose: onClose)
+        return (r.link, r.dps)
+    }
+
+    /// Like detect, plus how sure it is that this is the right device. Errors list what each version said.
+    static func detectFull(devId: String, host: String, localKey: String, knownDPs: [String], timeout: Double = 4,
+                           versions: [Double] = [3.3, 3.4, 3.5], probe: [[String: JSONValue]] = [],
+                           onDPS: @escaping @Sendable ([String: JSONValue]) -> Void,
+                           onClose: @escaping @Sendable (String) -> Void) async throws -> DetectResult {
+        var notes: [String] = []
         for v in versions {
             let link = LocalLink(devId: devId, host: host, localKey: localKey, version: v, knownDPs: knownDPs, timeout: timeout, onDPS: onDPS, onClose: onClose)
             do {
                 try await link.open()
-                // An empty answer still proves the key works: Some devices report nothing until used.
-                return (link, try await link.statusAfterOpen())
+                let (dps, proof) = try await link.verify(probe: probe)
+                return DetectResult(link: link, dps: dps, proof: proof)
             } catch {
-                lastError = error
+                notes.append("\(String(format: "%.1f", v)): \(Self.short(error))")
             }
             await link.close()
         }
-        throw lastError
+        throw LocalError(notes.joined(separator: " · "))
+    }
+
+    static func short(_ e: Error) -> String {
+        if let l = e as? LocalError { return l.message.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+        if let n = e as? NWError { return "\(n)" }
+        return e.localizedDescription
     }
 }
 
@@ -511,6 +619,75 @@ enum LocalScan {
             ptr = ifa.ifa_next
         }
         return nil
+    }
+
+    /// What a Tuya device says about itself in its broadcast.
+    struct Heard: Sendable { let devId: String; let ip: String; let version: Double }
+
+    /// Listens for the broadcasts every Tuya device sends every few seconds (UDP 6666 plain, 6667 encrypted with
+    /// Tuya's fixed discovery key). Gives the exact IP and protocol version without guessing. iOS may not deliver
+    /// broadcasts to every app, so this is a bonus on top of the port scan, not a replacement.
+    static func listen(seconds: Double) async -> [Heard] {
+        let deadline = Date().addingTimeInterval(seconds)
+        async let a = listen(port: 6666, until: deadline)
+        async let b = listen(port: 6667, until: deadline)
+        let all = await a + b
+        var seen: Set<String> = []
+        return all.filter { seen.insert($0.devId).inserted }
+    }
+
+    private static let udpKey: [UInt8] = Array(Insecure.MD5.hash(data: Data("yGAdlopoPVldABfn".utf8)))
+
+    private static func listen(port: UInt16, until deadline: Date) async -> [Heard] {
+        await withCheckedContinuation { (cont: CheckedContinuation<[Heard], Never>) in
+            Thread.detachNewThread {
+                var out: [Heard] = []
+                let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+                guard fd >= 0 else { cont.resume(returning: out); return }
+                var yes: Int32 = 1
+                let size = socklen_t(MemoryLayout<Int32>.size)
+                setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, size)
+                setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, size)
+                setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, size)
+                var tv = timeval(tv_sec: 0, tv_usec: 300_000)
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+                var addr = sockaddr_in()
+                addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                addr.sin_family = sa_family_t(AF_INET)
+                addr.sin_port = port.bigEndian
+                addr.sin_addr = in_addr(s_addr: 0)
+                let bound = withUnsafePointer(to: &addr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+                }
+                if bound == 0 {
+                    var buf = [UInt8](repeating: 0, count: 4096)
+                    while Date() < deadline {
+                        let n = recv(fd, &buf, buf.count, 0)
+                        if n > 0, let h = LocalScan.parse(Array(buf[0..<n])) { out.append(h) }
+                    }
+                }
+                Darwin.close(fd)
+                cont.resume(returning: out)
+            }
+        }
+    }
+
+    static func parse(_ packet: [UInt8]) -> Heard? {
+        var json: [String: Any]?
+        func obj(_ bytes: [UInt8]) -> [String: Any]? {
+            guard let i = bytes.firstIndex(of: UInt8(ascii: "{")), let j = bytes.lastIndex(of: UInt8(ascii: "}")), i < j else { return nil }
+            return try? JSONSerialization.jsonObject(with: Data(bytes[i...j])) as? [String: Any]
+        }
+        if packet.count > 28, packet.be32(0) == 0x000055AA {
+            let body = Array(packet[20..<(packet.count - 8)])
+            json = obj(body) ?? LocalCrypto.ecbDecrypt(body, key: udpKey).flatMap(obj)
+        } else if packet.count > 50, packet.be32(0) == 0x00006699 {
+            var buffer = packet
+            json = TuyaCodec(version: 3.5, keyBytes: udpKey).decode(&buffer).first.flatMap { obj($0.payload) }
+        }
+        guard let j = json, let id = j["gwId"] as? String, let ip = j["ip"] as? String else { return nil }
+        let v = (j["version"] as? String).flatMap(Double.init) ?? (j["version"] as? NSNumber)?.doubleValue ?? 3.3
+        return Heard(devId: id, ip: ip, version: v)
     }
 
     /// Hosts on this /24 with Tuya's local port open.

@@ -439,7 +439,7 @@ actor IRSender {
                 await l.close()
             }
         }
-        let r = try await LocalLink.detect(devId: devId, host: host, localKey: key, knownDPs: [],
+        let r = try await LocalLink.detect(devId: devId, host: host, localKey: key, knownDPs: [], probe: IRCommand.probes,
                                            onDPS: onDPS, onClose: onClose)
         var c = BlasterConfig.stored
         c.version = r.0.version

@@ -51,6 +51,8 @@ final class Store: ObservableObject {
     // IR blaster (same one Redshift and Subwave use)
     @Published var blaster = BlasterConfig.stored { didSet { if blaster != oldValue { BlasterConfig.stored = blaster } } }
     @Published var blasterState: LinkState = .off
+    /// What each device on the Wi-Fi said during the last search, for when it goes wrong.
+    @Published var blasterLog: [String] = []
     @Published var codes = LearnedCodes.load() { didSet { if codes != oldValue { LearnedCodes.save(codes) } } }
     @Published var learning: LearnSession?
     @Published var token: TuyaToken? = TokenStore.load()
@@ -282,6 +284,9 @@ final class Store: ObservableObject {
             setupError = "Smart Life didn't hand over a local key for \(d.name)."
             return
         }
+        if d.isSub {
+            setupError = "\(d.name) is paired through a hub, not on Wi-Fi by itself, so it can't be reached directly. Pick the Wi-Fi blaster, or re-pair it straight to Wi-Fi in Smart Life."
+        }
         setBlaster(devId: d.id, key: key, name: d.name)
     }
 
@@ -366,44 +371,94 @@ final class Store: ObservableObject {
         return nil
     }
 
-    /// Scans the Wi-Fi for anything on Tuya's port, then tries the blaster's key on all of them at once.
+    /// Listens for the blaster's own broadcast while scanning the Wi-Fi for Tuya's port, then checks the key on
+    /// every candidate at once. Prefers a device that answered with something encrypted with our key.
     func findBlaster() {
         guard let devId = blaster.devId, let key = blaster.localKey else { return }
         blasterState = .searching("Scanning your Wi-Fi…")
+        blasterLog = []
         Task {
             await IRSender.shared.drop()
-            let hosts = await LocalScan.openHosts { n in
+            async let heardList = LocalScan.listen(seconds: 7)
+            let scanned = await LocalScan.openHosts { n in
                 Task { @MainActor in
                     if case .searching = Store.shared.blasterState { Store.shared.blasterState = .searching("Scanning your Wi-Fi… \(n)/254") }
                 }
             }
+            let heardAll = await heardList
+            let heard = heardAll.first { $0.devId == devId }
+            var log: [String] = []
+            if let heard {
+                log.append("Blaster announced itself at \(heard.ip), protocol \(heard.version).")
+            } else if !heardAll.isEmpty {
+                log.append("Heard \(heardAll.count) Tuya broadcast\(heardAll.count == 1 ? "" : "s"), none from this blaster.")
+            }
+            var hosts = scanned
+            if let heard { hosts.removeAll { $0 == heard.ip }; hosts.insert(heard.ip, at: 0) }
             if hosts.isEmpty {
+                blasterLog = log
                 blasterState = .failed("Nothing on your Wi-Fi answered on Tuya's port. Allow Local Network for Phosphor in iOS Settings, or type the blaster's IP.")
                 return
             }
-            blasterState = .searching("Trying the key on \(hosts.count) Tuya device\(hosts.count == 1 ? "" : "s")…")
-            let found: (String, Double)? = await withTaskGroup(of: (String, Double)?.self) { group in
+            blasterState = .searching("Checking the key on \(hosts.count) Tuya device\(hosts.count == 1 ? "" : "s")…")
+
+            // The blaster's own broadcast is definitive: try it first, with the version it gave.
+            if let heard, let r = try? await LocalLink.detectFull(devId: devId, host: heard.ip, localKey: key, knownDPs: [], timeout: 3,
+                                                                    versions: [heard.version] + [3.3, 3.4, 3.5].filter { $0 != heard.version },
+                                                                    probe: IRCommand.probes, onDPS: { _ in }, onClose: { _ in }) {
+                await r.link.close()
+                blasterLog = log
+                useBlaster(host: heard.ip, version: r.link.version)
+                return
+            }
+
+            var strong: (String, Double)?
+            var weak: [(String, Double)] = []
+            await withTaskGroup(of: (String, Double?, KeyProof?, String?).self) { group in
                 for host in hosts {
                     group.addTask {
-                        guard let r = try? await LocalLink.detect(devId: devId, host: host, localKey: key, knownDPs: [],
-                                                                  onDPS: { _ in }, onClose: { _ in }) else { return nil }
-                        await r.0.close()
-                        return (host, r.0.version)
+                        do {
+                            let r = try await LocalLink.detectFull(devId: devId, host: host, localKey: key, knownDPs: [], timeout: 3,
+                                                                   probe: IRCommand.probes, onDPS: { _ in }, onClose: { _ in })
+                            await r.link.close()
+                            return (host, r.link.version, r.proof, nil)
+                        } catch {
+                            return (host, nil, nil, LocalLink.short(error))
+                        }
                     }
                 }
-                for await r in group {
-                    if let r { group.cancelAll(); return r }
+                for await (host, version, proof, err) in group {
+                    if let version, let proof {
+                        log.append("\(host): took the key (protocol \(version)\(proof == .weak ? ", acknowledged only" : "")).")
+                        if proof == .strong, strong == nil { strong = (host, version) } else if proof == .weak { weak.append((host, version)) }
+                    } else {
+                        log.append("\(host): \(err ?? "no answer")")
+                    }
                 }
-                return nil
             }
-            if let found {
-                blaster.host = found.0
-                blaster.version = found.1
-                connectBlaster()
+            blasterLog = log
+            if let strong {
+                useBlaster(host: strong.0, version: strong.1)
+            } else if weak.count == 1 {
+                useBlaster(host: weak[0].0, version: weak[0].1)
+            } else if weak.count > 1 {
+                blasterState = .failed("\(weak.count) devices acknowledged but none proved the key (\(weak.map { $0.0 }.joined(separator: ", "))). Type the blaster's IP from your router.")
             } else {
-                blasterState = .failed("Found \(hosts.count) Tuya device\(hosts.count == 1 ? "" : "s") but none took the blaster's key. If you re-paired it, refresh the key.")
+                var why = "Found \(hosts.count) Tuya device\(hosts.count == 1 ? "" : "s") but none took the blaster's key."
+                if let d = devices.first(where: { $0.id == devId }) {
+                    if d.isSub { why += " Smart Life says this blaster is paired through a hub, so it has no Wi-Fi connection of its own." }
+                    else if !d.online { why += " Smart Life says the blaster is offline." }
+                }
+                why += " Close Smart Life and the other blaster apps (it may only take one connection at a time), then try again. If you re-paired it, refresh the key."
+                blasterState = .failed(why)
             }
         }
+    }
+
+    private func useBlaster(host: String, version: Double) {
+        blaster.host = host
+        blaster.version = version
+        connectBlaster()
     }
 
     // MARK: - IR learning
