@@ -30,42 +30,38 @@ enum APKInfo {
         return result
     }
 
-    /// A bitmap icon as PNG: the sharpest PNG/WebP the app ships, or an adaptive icon's layers put together.
+    /// The app's icon as an image: an adaptive icon's layers put together full-bleed (vectors included),
+    /// otherwise the sharpest bitmap, otherwise a rendered vector.
     private static func icon(_ id: UInt32, table: ResTable, zip: RemoteZip) async throws -> Data? {
+        let loader = DrawableLoader(table: table, zip: zip)
+        let size = CGSize(width: 256, height: 256)
+        let files = table.files(id)
+        if let xmlPath = files.first(where: { $0.path.hasSuffix(".xml") })?.path,
+           let xml = try await zip.read(xmlPath), let root = AXML(xml).root, root.name == "adaptive-icon" {
+            let bg = try await loader.layer(root, "background")
+            let fg = try await loader.layer(root, "foreground")
+            if bg != nil || fg != nil {
+                let img = UIGraphicsImageRenderer(size: size).image { ctx in
+                    UIColor.black.setFill()
+                    ctx.fill(CGRect(origin: .zero, size: size))
+                    // Adaptive layers are 108dp with the middle 72dp visible.
+                    let full = CGRect(x: -size.width * 0.25, y: -size.height * 0.25, width: size.width * 1.5, height: size.height * 1.5)
+                    if let bg { DrawableRenderer.draw(bg, in: full, ctx.cgContext) }
+                    if let fg { DrawableRenderer.draw(fg, in: full, ctx.cgContext) }
+                }
+                return img.pngData()
+            }
+        }
         if let path = table.bestBitmap(id), let bytes = try await zip.read(path), let img = UIImage(data: Data(bytes)) {
             return img.pngData()
         }
-        // Adaptive icon: <adaptive-icon><background .../><foreground .../></adaptive-icon>
-        guard let xmlPath = table.files(id).first(where: { $0.path.hasSuffix(".xml") })?.path,
-              let xml = try await zip.read(xmlPath) else { return nil }
-        let doc = AXML(xml)
-        func layer(_ tag: String) async throws -> (UIImage?, UIColor?) {
-            guard let el = doc.elements.first(where: { $0.name == tag }),
-                  let a = el.attr(name: "drawable", id: 0x0101_0199) else { return (nil, nil) }
-            if (0x1c...0x1f).contains(a.type) { return (nil, color(a.data)) }
-            guard a.type == 0x01 else { return (nil, nil) }
-            if let c = table.color(a.data) { return (nil, color(c)) }
-            if let p = table.bestBitmap(a.data), let b = try await zip.read(p), let img = UIImage(data: Data(b)) { return (img, nil) }
-            return (nil, nil)
-        }
-        let (fg, fgColor) = try await layer("foreground")
-        let (bg, bgColor) = try await layer("background")
-        guard fg != nil || bg != nil else { return nil }
-        let size = CGSize(width: 192, height: 192)
-        let r = UIGraphicsImageRenderer(size: size)
-        let img = r.image { ctx in
-            (bgColor ?? .black).setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-            // Adaptive layers are 108dp with the middle 72dp visible.
-            let full = CGRect(x: -size.width * 0.25, y: -size.height * 0.25, width: size.width * 1.5, height: size.height * 1.5)
-            bg?.draw(in: full)
-            if let fgColor, fg == nil {
-                fgColor.setFill()
-                ctx.fill(CGRect(origin: .zero, size: size).insetBy(dx: size.width * 0.3, dy: size.height * 0.3))
+        if let d = try await loader.load(id) {
+            let img = UIGraphicsImageRenderer(size: size).image { ctx in
+                DrawableRenderer.draw(d, in: CGRect(origin: .zero, size: size), ctx.cgContext)
             }
-            fg?.draw(in: full)
+            return img.pngData()
         }
-        return img.pngData()
+        return nil
     }
 
     private static func color(_ argb: UInt32) -> UIColor {
@@ -197,8 +193,21 @@ struct AXML {
         }
     }
 
+    /// The same elements as a tree (vector drawables need nesting for groups).
+    final class Node {
+        let name: String
+        let attrs: [Attr]
+        var children: [Node] = []
+        init(name: String, attrs: [Attr]) { self.name = name; self.attrs = attrs }
+        func attr(_ n: String, id: UInt32? = nil) -> Attr? {
+            if let id, let a = attrs.first(where: { $0.resID == id }) { return a }
+            return attrs.first { $0.name == n }
+        }
+    }
+
     private(set) var strings: [String] = []
     private(set) var elements: [Element] = []
+    private(set) var root: Node?
 
     func string(_ i: Int) -> String? { i >= 0 && i < strings.count ? strings[i] : nil }
 
@@ -206,6 +215,7 @@ struct AXML {
         let b = Bytes(bytes)
         guard b.u16(0) == 0x0003 else { return }
         var resMap: [UInt32] = []
+        var stack: [Node] = []
         var pos = b.u16(2)
         var guardCount = 0
         while pos + 8 <= b.count, guardCount < 200_000 {
@@ -231,6 +241,11 @@ struct AXML {
                                       type: b.u8(a + 15), data: b.u32(a + 16)))
                 }
                 elements.append(Element(name: string(nameIdx) ?? "", attrs: attrs))
+                let node = Node(name: string(nameIdx) ?? "", attrs: attrs)
+                if let parent = stack.last { parent.children.append(node) } else if root == nil { root = node }
+                stack.append(node)
+            case 0x0103:
+                if !stack.isEmpty { stack.removeLast() }
             default:
                 break
             }

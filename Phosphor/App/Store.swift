@@ -285,7 +285,7 @@ final class Store: ObservableObject {
             }
             next.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             sideApps = next
-            await readNames(adb, next.filter { $0.label == nil || $0.hasIcon == nil }.map(\.package))
+            await readNames(adb, next.filter { $0.label == nil || $0.hasIcon != true || $0.iconRev != 2 }.map(\.package))
             sideApps.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             adbMessage = sideApps.isEmpty ? "Connected. No sideloaded apps on the TV." : "\(sideApps.count) app\(sideApps.count == 1 ? "" : "s")."
         } catch {
@@ -297,16 +297,21 @@ final class Store: ObservableObject {
     private func readNames(_ adb: ADB, _ pkgs: [String]) async {
         for (n, pkg) in pkgs.enumerated() {
             adbMessage = "Reading names and icons \(n + 1) of \(pkgs.count)…"
-            guard let r = try? await APKInfo.read(adb, package: pkg),
-                  let i = sideApps.firstIndex(where: { $0.package == pkg }) else { continue }
+            // Google Play first: official, full-square, high-res. Then the APK itself (adaptive layers, bitmaps, vectors).
+            async let play = PlayStore.lookup(pkg)
+            let apk = try? await APKInfo.read(adb, package: pkg)
+            let p = await play
+            guard let i = sideApps.firstIndex(where: { $0.package == pkg }) else { continue }
             var a = sideApps[i]
-            if let l = r.label { a.label = l }
-            if let icon = r.icon {
-                AppGroup.writeData(icon, SideApp.iconFile(pkg))
+            if let l = apk?.label ?? p.title { a.label = l }
+            let raw = p.icon ?? apk?.icon.flatMap { UIImage(data: $0) }
+            if let raw, let png = IconShape.normalize(raw).pngData() {
+                AppGroup.writeData(png, SideApp.iconFile(pkg))
                 a.hasIcon = true
             } else {
                 a.hasIcon = false
             }
+            a.iconRev = 2
             sideApps[i] = a
         }
     }

@@ -559,14 +559,22 @@ struct HomeView: View {
     }
 }
 
+/// One shape for every app icon, iOS style: a continuous-corner square at the same radius ratio as iOS icons.
+struct IconMask: Shape {
+    func path(in r: CGRect) -> Path {
+        RoundedRectangle(cornerRadius: min(r.width, r.height) * IconShape.corner, style: .continuous).path(in: r)
+    }
+}
+
 struct AppTile: View {
     let app: BraviaApp
+    @ObservedObject private var icons = IconCache.shared
 
     var body: some View {
         VStack(spacing: 6) {
-            AsyncImage(url: app.iconURL) { phase in
-                if let img = phase.image {
-                    img.resizable().scaledToFill()
+            Group {
+                if let img = icons.image(app.uri, url: app.iconURL) {
+                    Image(uiImage: img).resizable().scaledToFill()
                 } else {
                     ZStack {
                         Color.white.opacity(0.08)
@@ -575,8 +583,8 @@ struct AppTile: View {
                 }
             }
             .frame(width: 62, height: 62)
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Theme.stroke))
+            .clipShape(IconMask())
+            .overlay(IconMask().stroke(Theme.stroke))
             Text(app.title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.75))
@@ -638,7 +646,7 @@ struct AddAppSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 if let d = store.sideApps.first(where: { $0.package == pkg })?.iconData, let img = UIImage(data: d) {
-                                    Image(uiImage: img).resizable().frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 8))
+                                    Image(uiImage: img).resizable().frame(width: 32, height: 32).clipShape(IconMask())
                                 } else {
                                     Image(systemName: "app.dashed").font(.system(size: 22)).frame(width: 32, height: 32).foregroundStyle(.secondary)
                                 }
@@ -688,8 +696,8 @@ struct SideTile: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 62, height: 62)
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Theme.stroke))
+                    .clipShape(IconMask())
+                    .overlay(IconMask().stroke(Theme.stroke))
             } else {
                 monogram
             }
@@ -704,8 +712,8 @@ struct SideTile: View {
 
     private var monogram: some View {
             ZStack {
-                RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.black)
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                IconMask().fill(Color.black)
+                IconMask()
                     .stroke(Color(hue: hue, saturation: 0.75, brightness: 1), lineWidth: 2)
                     .shadow(color: Color(hue: hue, saturation: 0.8, brightness: 1).opacity(0.8), radius: 6)
                 Text(String(app.title.prefix(1)).uppercased())

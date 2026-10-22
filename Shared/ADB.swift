@@ -25,6 +25,8 @@ struct SideApp: Codable, Hashable, Identifiable {
     var pinned: Bool?
     /// Has a launcher entry. Apps without one are still listed; opening falls back to their main screen.
     var launchable: Bool?
+    /// Which icon pipeline made the saved icon (2 = Play Store / vectors, squared off). Older ones get redone.
+    var iconRev: Int?
     var id: String { package }
     var title: String { name ?? label ?? SideApp.guessName(package) }
 
