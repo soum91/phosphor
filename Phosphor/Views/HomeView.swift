@@ -13,6 +13,9 @@ struct RootView: View {
             NavigationStack { RemoteView() }
                 .tabItem { Label("Remote", systemImage: "av.remote.fill") }
                 .tag(1)
+            NavigationStack { MouseView() }
+                .tabItem { Label("Mouse", systemImage: "cursorarrow.rays") }
+                .tag(2)
         }
         .sheet(item: Binding(get: { store.learning }, set: { if $0 == nil { store.endLearn() } })) { _ in
             LearnSheet().environmentObject(store).presentationDetents([.medium])

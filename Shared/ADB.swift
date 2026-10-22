@@ -287,6 +287,63 @@ actor ADB {
         return String(decoding: out, as: UTF8.self)
     }
 
+    // MARK: Streams (a long-running command you keep writing to, like `hid -`)
+
+    /// Opens a service and keeps it open. Returns the ids to write to it with.
+    func openStream(_ service: String) async throws -> (local: UInt32, remote: UInt32) {
+        let local = nextID
+        nextID += 1
+        try send(Cmd.open, local, 0, Array("\(service)\0".utf8))
+        let m = try await next([Cmd.okay, Cmd.clse], timeout: 5, for: local)
+        guard m.cmd == Cmd.okay else { throw ADBError("The TV wouldn't start \(service).") }
+        return (local, m.arg0)
+    }
+
+    /// Writes to a stream and waits for the TV to take it (ADB allows one write in flight per stream).
+    /// Anything the command prints meanwhile is acknowledged and returned.
+    @discardableResult
+    func write(_ local: UInt32, _ remote: UInt32, _ data: [UInt8], timeout: Double = 3) async throws -> [UInt8] {
+        try send(Cmd.wrte, local, remote, data)
+        var printed: [UInt8] = []
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            while let i = inbox.firstIndex(where: { $0.arg1 == local && [Cmd.okay, Cmd.wrte, Cmd.clse].contains($0.cmd) }) {
+                let m = inbox.remove(at: i)
+                switch m.cmd {
+                case Cmd.okay:
+                    return printed
+                case Cmd.wrte:
+                    printed += m.data
+                    try send(Cmd.okay, local, remote, [])
+                default:
+                    throw ADBError("The TV closed it: \(String(decoding: printed, as: UTF8.self))")
+                }
+            }
+            if closed { throw ADBError("The ADB connection closed.") }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        throw ADBError("The TV stopped answering.")
+    }
+
+    /// Acknowledges and returns whatever a stream printed, so it never blocks on a full pipe.
+    func drain(_ local: UInt32, _ remote: UInt32) throws -> (output: [UInt8], ended: Bool) {
+        var out: [UInt8] = []
+        var ended = closed
+        while let i = inbox.firstIndex(where: { $0.arg1 == local && ($0.cmd == Cmd.wrte || $0.cmd == Cmd.clse) }) {
+            let m = inbox.remove(at: i)
+            if m.cmd == Cmd.clse { ended = true; continue }
+            out += m.data
+            try send(Cmd.okay, local, remote, [])
+        }
+        return (out, ended)
+    }
+
+    func closeStream(_ local: UInt32, _ remote: UInt32) {
+        try? send(Cmd.clse, local, remote, [])
+    }
+
+    var isClosed: Bool { closed }
+
     // MARK: Plumbing
 
     private func markClosed() { closed = true }
