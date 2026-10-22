@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.6",
+          "buildVersion": "6",
+          "date": "2026-10-22T19:14:21Z",
+          "localizedDescription": "- Mouse: cut latency (no Nagle, voice-priority Wi-Fi, instant wakeups, ordered input queue) (e6c761d)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-6/Obsidian-1.0.0-build-6.ipa",
+          "size": 2456592,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.5",
           "buildVersion": "5",
           "date": "2026-10-22T19:05:55Z",
@@ -65,11 +74,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.5",
-      "versionDate": "2026-10-22T19:05:55Z",
-      "versionDescription": "- Mouse tab: real HID mouse and keyboard over ADB, trackpad, click buttons, notched wheel, air mouse (72a89d6)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-5/Obsidian-1.0.0-build-5.ipa",
-      "size": 2455520,
+      "version": "1.0.0.6",
+      "versionDate": "2026-10-22T19:14:21Z",
+      "versionDescription": "- Mouse: cut latency (no Nagle, voice-priority Wi-Fi, instant wakeups, ordered input queue) (e6c761d)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-6/Obsidian-1.0.0-build-6.ipa",
+      "size": 2456592,
       "appPermissions": {}
     }
   ],
