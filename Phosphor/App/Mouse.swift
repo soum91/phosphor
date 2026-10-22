@@ -2,6 +2,81 @@ import Foundation
 import SwiftUI
 import CoreMotion
 
+/// Input waiting to go to the TV. Touch handling writes here directly (no async hops, so nothing reorders):
+/// movement is summed, while button changes and keys are queued in order with the movement before them.
+final class HIDInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var dx = 0, dy = 0, wheel = 0, pan = 0
+    private var buttons: UInt8 = 0
+    private var queue: [String] = []
+    private let wake: AsyncStream<Void>.Continuation
+
+    init(wake: AsyncStream<Void>.Continuation) { self.wake = wake }
+
+    func move(_ x: Int, _ y: Int) { lock.lock(); dx += x; dy += y; lock.unlock(); wake.yield() }
+    func scroll(_ v: Int, _ h: Int) { lock.lock(); wheel += v; pan += h; lock.unlock(); wake.yield() }
+
+    func setButton(_ mask: UInt8, _ down: Bool) {
+        lock.lock()
+        flushMotion()
+        if down { buttons |= mask } else { buttons &= ~mask }
+        queue.append(Self.mouse(buttons, 0, 0, 0, 0))
+        lock.unlock()
+        wake.yield()
+    }
+
+    func click(_ mask: UInt8) {
+        setButton(mask, true)
+        setButton(mask, false)
+    }
+
+    func keys(_ reports: [[UInt8]]) {
+        lock.lock()
+        flushMotion()
+        for r in reports {
+            queue.append("{\"id\":\(HIDSession.keyboardID),\"command\":\"report\",\"report\":[\(r.map(String.init).joined(separator: ","))]}\n")
+        }
+        lock.unlock()
+        wake.yield()
+    }
+
+    /// Everything waiting, as hid tool lines, oldest first.
+    func take() -> String {
+        lock.lock()
+        flushMotion()
+        let out = queue.joined()
+        queue.removeAll(keepingCapacity: true)
+        lock.unlock()
+        return out
+    }
+
+    /// Lets go of any held button (used when leaving).
+    func releaseAll() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard buttons != 0 else { return nil }
+        buttons = 0
+        return Self.mouse(0, 0, 0, 0, 0)
+    }
+
+    private func flushMotion() {
+        var n = 0
+        while (dx != 0 || dy != 0 || wheel != 0 || pan != 0), n < 16 {
+            let x = max(-127, min(127, dx)), y = max(-127, min(127, dy))
+            let v = max(-127, min(127, wheel)), h = max(-127, min(127, pan))
+            dx -= x; dy -= y; wheel -= v; pan -= h
+            queue.append(Self.mouse(buttons, x, y, v, h))
+            n += 1
+        }
+        if n == 16 { dx = 0; dy = 0; wheel = 0; pan = 0 }
+    }
+
+    private static func mouse(_ b: UInt8, _ x: Int, _ y: Int, _ v: Int, _ h: Int) -> String {
+        func u(_ n: Int) -> Int { n < 0 ? 256 + n : n }
+        return "{\"id\":\(HIDSession.mouseID),\"command\":\"report\",\"report\":[\(b),\(u(x)),\(u(y)),\(u(v)),\(u(h))]}\n"
+    }
+}
+
 /// A real USB mouse and keyboard, as far as the TV can tell. Android's `hid` shell tool registers virtual HID devices
 /// through /dev/uhid, so the TV shows its own pointer and handles clicks, the wheel and drags natively. We keep one
 /// `hid -` process open over ADB and stream raw HID reports into it, coalescing movement so nothing queues up.
@@ -9,10 +84,10 @@ actor HIDSession {
     private let adb: ADB
     private let local: UInt32
     private let remote: UInt32
-    private var dx = 0, dy = 0, wheel = 0, pan = 0
-    private var buttons: UInt8 = 0
-    private var sentButtons: UInt8 = 0
-    private var keyReports: [[UInt8]] = []
+    nonisolated let input: HIDInput
+    private let wakeStream: AsyncStream<Void>
+    private let wake: AsyncStream<Void>.Continuation
+    private var drainDue = false
     private var loop: Task<Void, Never>?
     private(set) var ended = false
     private var onEnd: (@Sendable (String) -> Void)?
@@ -40,6 +115,10 @@ actor HIDSession {
         self.adb = adb
         self.local = local
         self.remote = remote
+        let (stream, cont) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        wakeStream = stream
+        wake = cont
+        input = HIDInput(wake: cont)
     }
 
     static func start(host: String, onEnd: @escaping @Sendable (String) -> Void) async throws -> HIDSession {
@@ -79,29 +158,12 @@ actor HIDSession {
         }
     }
 
-    // MARK: Input
-
-    func move(_ x: Int, _ y: Int) { dx += x; dy += y }
-    func scroll(_ v: Int, _ h: Int) { wheel += v; pan += h }
-    func setButton(_ mask: UInt8, _ down: Bool) { if down { buttons |= mask } else { buttons &= ~mask } }
-
-    /// A click as two reports, so it can't be merged away.
-    func click(_ mask: UInt8) {
-        buttons |= mask
-        flushMouseNow = true
-        clickRelease |= mask
-    }
-    private var flushMouseNow = false
-    private var clickRelease: UInt8 = 0
-
-    func keys(_ reports: [[UInt8]]) { keyReports += reports }
-
     func stop() async {
         loop?.cancel()
         loop = nil
+        wake.finish()
         if !ended {
-            buttons = 0
-            if sentButtons != 0 { try? await adb.write(local, remote, Array(mouseReport(0, 0, 0, 0).utf8), timeout: 1) }
+            if let r = input.releaseAll() { try? await adb.write(local, remote, Array(r.utf8), timeout: 1) }
             await adb.closeStream(local, remote)
         }
         ended = true
@@ -110,66 +172,43 @@ actor HIDSession {
 
     // MARK: Sending
 
-    private func mouseReport(_ x: Int, _ y: Int, _ v: Int, _ h: Int) -> String {
-        func b(_ n: Int) -> Int { n < 0 ? 256 + n : n }
-        return line(["id": Self.mouseID, "command": "report", "report": [Int(buttons), b(x), b(y), b(v), b(h)]])
+    private func tick() {
+        drainDue = true
+        wake.yield()
     }
 
-    private func pendingLines() -> String {
-        var out = ""
-        var n = 0
-        while (dx != 0 || dy != 0 || wheel != 0 || pan != 0 || buttons != sentButtons || flushMouseNow), n < 12 {
-            let x = max(-127, min(127, dx)), y = max(-127, min(127, dy))
-            let v = max(-127, min(127, wheel)), h = max(-127, min(127, pan))
-            dx -= x; dy -= y; wheel -= v; pan -= h
-            out += mouseReport(x, y, v, h)
-            sentButtons = buttons
-            n += 1
-            if flushMouseNow {
-                flushMouseNow = false
-                buttons &= ~clickRelease
-                clickRelease = 0
-            }
-        }
-        for k in keyReports {
-            out += line(["id": Self.keyboardID, "command": "report", "report": k.map(Int.init)])
-        }
-        keyReports.removeAll()
-        return out
-    }
-
+    /// Wakes the moment input arrives, sends everything waiting in one write, repeats until there's nothing left.
     private func run() {
-        loop = Task { [weak self] in
-            var lastDrain = Date()
-            while !Task.isCancelled {
-                guard let self else { return }
-                let text = await self.pendingLines()
+        let stream = wakeStream
+        loop = Task {
+            let ticker = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    await self?.tick()
+                }
+            }
+            defer { ticker.cancel() }
+            for await _ in stream {
+                if Task.isCancelled || ended { return }
                 do {
-                    if !text.isEmpty {
-                        try await self.send(text)
-                    } else {
-                        try await Task.sleep(nanoseconds: 4_000_000)
+                    while true {
+                        let text = input.take()
+                        if text.isEmpty { break }
+                        try await adb.write(local, remote, Array(text.utf8))
                     }
-                    if Date().timeIntervalSince(lastDrain) > 0.5 {
-                        lastDrain = Date()
-                        if try await self.drainCheck() { await self.end("The TV's hid tool stopped.") ; return }
+                    if drainDue {
+                        drainDue = false
+                        if try await adb.drain(local, remote).ended {
+                            await end("The TV's hid tool stopped.")
+                            return
+                        }
                     }
-                } catch is CancellationError {
-                    return
                 } catch {
-                    await self.end(error.localizedDescription)
+                    await end(error.localizedDescription)
                     return
                 }
             }
         }
-    }
-
-    private func send(_ text: String) async throws {
-        try await adb.write(local, remote, Array(text.utf8))
-    }
-
-    private func drainCheck() async throws -> Bool {
-        try await adb.drain(local, remote).ended
     }
 
     private func end(_ why: String) async {
@@ -301,7 +340,7 @@ final class MouseLink: ObservableObject {
         let ix = Int(remX.rounded(.towardZero)), iy = Int(remY.rounded(.towardZero))
         remX -= Double(ix)
         remY -= Double(iy)
-        if ix != 0 || iy != 0 { Task { await session.move(ix, iy) } }
+        if ix != 0 || iy != 0 { session.input.move(ix, iy) }
     }
 
     /// Two-finger scroll: one wheel notch per 14 points.
@@ -313,23 +352,23 @@ final class MouseLink: ObservableObject {
         let v = Int(scrollV.rounded(.towardZero)), h = Int(scrollH.rounded(.towardZero))
         scrollV -= Double(v)
         scrollH -= Double(h)
-        if v != 0 || h != 0 { Task { await session.scroll(v, h) } }
+        if v != 0 || h != 0 { session.input.scroll(v, h) }
     }
 
     /// Wheel strip: whole notches.
     func wheel(_ notches: Int) {
         guard let session, notches != 0 else { return }
-        Task { await session.scroll(notches, 0) }
+        session.input.scroll(notches, 0)
     }
 
     func click(_ mask: UInt8) {
         guard let session else { return }
-        Task { await session.click(mask) }
+        session.input.click(mask)
     }
 
     func button(_ mask: UInt8, down: Bool) {
         guard let session else { return }
-        Task { await session.setButton(mask, down) }
+        session.input.setButton(mask, down)
     }
 
     func type(_ text: String) {
@@ -338,12 +377,12 @@ final class MouseLink: ObservableObject {
         for ch in text {
             if let r = HIDKeys.report(for: ch) { reports.append(r); reports.append(HIDKeys.release) }
         }
-        Task { await session.keys(reports) }
+        session.input.keys(reports)
     }
 
     func key(_ code: UInt8, times: Int = 1) {
         guard let session, times > 0 else { return }
-        Task { await session.keys(Array((0..<times).flatMap { _ in HIDKeys.tap(code) })) }
+        session.input.keys(Array((0..<times).flatMap { _ in HIDKeys.tap(code) }))
     }
 
     // MARK: Air mouse: point the phone, hold a finger on the pad to move.
@@ -374,6 +413,6 @@ final class MouseLink: ObservableObject {
         let ix = Int(remX.rounded(.towardZero)), iy = Int(remY.rounded(.towardZero))
         remX -= Double(ix)
         remY -= Double(iy)
-        if ix != 0 || iy != 0 { Task { await session.move(ix, iy) } }
+        if ix != 0 || iy != 0 { session.input.move(ix, iy) }
     }
 }

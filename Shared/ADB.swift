@@ -217,7 +217,14 @@ actor ADB {
 
     /// Connects and authenticates. `approvalWait` is how long to wait for you to accept the prompt on the TV.
     func connect(approvalWait: Double = 0) async throws {
-        let c = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        // No Nagle: tiny mouse reports must go out immediately, not wait to be bundled with the next one.
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        tcp.enableKeepalive = true
+        let params = NWParameters(tls: nil, tcp: tcp)
+        // Highest Wi-Fi priority (voice queue), which also keeps the radio from napping between reports.
+        params.serviceClass = .interactiveVoice
+        let c = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: params)
         conn = c
         do {
             try await LocalLink.waitReady(c, timeout: 4)
@@ -320,7 +327,7 @@ actor ADB {
                 }
             }
             if closed { throw ADBError("The ADB connection closed.") }
-            try await Task.sleep(nanoseconds: 1_000_000)
+            try await Task.sleep(nanoseconds: 200_000)
         }
         throw ADBError("The TV stopped answering.")
     }
