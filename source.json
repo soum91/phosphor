@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.2",
+          "buildVersion": "2",
+          "date": "2026-10-22T17:36:48Z",
+          "localizedDescription": "- Fix IR blaster search: prove the key on quiet 3.3 blasters, hear Tuya broadcasts, show what each device said (1d3772f)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-2/Phosphor-1.0.0-build-2.ipa",
+          "size": 1559895,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.1",
           "buildVersion": "1",
           "date": "2026-10-22T00:50:32Z",
@@ -29,11 +38,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.1",
-      "versionDate": "2026-10-22T00:50:32Z",
-      "versionDescription": "- Phosphor: Sony Bravia remote over Wi-Fi and IR, with widgets, Control Center and Siri (a845d88)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-1/Phosphor-1.0.0-build-1.ipa",
-      "size": 1531090,
+      "version": "1.0.0.2",
+      "versionDate": "2026-10-22T17:36:48Z",
+      "versionDescription": "- Fix IR blaster search: prove the key on quiet 3.3 blasters, hear Tuya broadcasts, show what each device said (1d3772f)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-2/Phosphor-1.0.0-build-2.ipa",
+      "size": 1559895,
       "appPermissions": {}
     }
   ],
