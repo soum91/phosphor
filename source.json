@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.7",
+          "buildVersion": "7",
+          "date": "2026-10-22T19:18:19Z",
+          "localizedDescription": "- All third-party apps in Sideloaded, plus an Add-any-app picker (system apps too) (3529229)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-7/Obsidian-1.0.0-build-7.ipa",
+          "size": 2489957,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.6",
           "buildVersion": "6",
           "date": "2026-10-22T19:14:21Z",
@@ -74,11 +83,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.6",
-      "versionDate": "2026-10-22T19:14:21Z",
-      "versionDescription": "- Mouse: cut latency (no Nagle, voice-priority Wi-Fi, instant wakeups, ordered input queue) (e6c761d)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-6/Obsidian-1.0.0-build-6.ipa",
-      "size": 2456592,
+      "version": "1.0.0.7",
+      "versionDate": "2026-10-22T19:18:19Z",
+      "versionDescription": "- All third-party apps in Sideloaded, plus an Add-any-app picker (system apps too) (3529229)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-7/Obsidian-1.0.0-build-7.ipa",
+      "size": 2489957,
       "appPermissions": {}
     }
   ],
