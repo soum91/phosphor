@@ -1,0 +1,81 @@
+name: Phosphor
+options:
+  bundleIdPrefix: com.soum91
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+targets:
+  Phosphor:
+    type: application
+    platform: iOS
+    sources:
+      - path: Phosphor
+      - path: Shared
+    dependencies:
+      - target: PhosphorWidget
+    info:
+      path: Phosphor/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Phosphor
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        ITSAppUsesNonExemptEncryption: false
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.soum91.phosphor.refresh]
+        NSLocalNetworkUsageDescription: Phosphor talks to your Sony TV and IR blaster directly over Wi-Fi.
+        NSBonjourServices: [_googlecast._tcp, _androidtvremote2._tcp]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSPhotoLibraryAddUsageDescription: Phosphor saves the Smart Life login QR to Photos so you can pick it from Smart Life's scanner.
+        LSApplicationQueriesSchemes: [smartlife, tuyasmart]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.soum91.phosphor
+            CFBundleURLSchemes: [phosphor]
+    entitlements:
+      path: Phosphor/Phosphor.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.soum91.phosphor]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.soum91.phosphor
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+  PhosphorWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PhosphorWidget
+      - path: Shared
+    info:
+      path: PhosphorWidget/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Phosphor
+        NSLocalNetworkUsageDescription: Phosphor talks to your Sony TV and IR blaster directly over Wi-Fi.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: PhosphorWidget/PhosphorWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.soum91.phosphor]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.soum91.phosphor.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES

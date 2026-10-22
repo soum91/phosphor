@@ -1,0 +1,13 @@
+{
+  "name": "Phosphor",
+  "sourceName": "Phosphor by soum91",
+  "sourceIdentifier": "io.github.soum91.phosphor",
+  "subtitle": "Sony Bravia remote over Wi-Fi and IR",
+  "description": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
+  "developerName": "soum91",
+  "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
+  "tintColor": "7CF0A0",
+  "category": "utilities",
+  "website": "https://github.com/soum91/phosphor",
+  "sourceURL": "https://raw.githubusercontent.com/soum91/phosphor/source/source.json"
+}
