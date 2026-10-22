@@ -1,24 +1,33 @@
 {
-  "name": "Phosphor by soum91",
+  "name": "Obsidian by soum91",
   "identifier": "io.github.soum91.phosphor",
-  "subtitle": "Sony Bravia remote over Wi-Fi and IR",
+  "subtitle": "Sony Bravia OLED remote over Wi-Fi, IR and ADB",
   "description": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
   "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
   "website": "https://github.com/soum91/phosphor",
   "sourceURL": "https://raw.githubusercontent.com/soum91/phosphor/source/source.json",
-  "tintColor": "7CF0A0",
+  "tintColor": "B885FF",
   "apps": [
     {
-      "name": "Phosphor",
+      "name": "Obsidian",
       "bundleIdentifier": "com.soum91.phosphor",
       "developerName": "soum91",
-      "subtitle": "Sony Bravia remote over Wi-Fi and IR",
+      "subtitle": "Sony Bravia OLED remote over Wi-Fi, IR and ADB",
       "localizedDescription": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
       "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
-      "tintColor": "7CF0A0",
+      "tintColor": "B885FF",
       "category": "utilities",
       "screenshotURLs": [],
       "versions": [
+        {
+          "version": "1.0.0.3",
+          "buildVersion": "3",
+          "date": "2026-10-22T17:59:36Z",
+          "localizedDescription": "- Obsidian: new name and neon OLED icon, sideloaded apps over ADB, rearrangeable remote with TV key, iPhone volume buttons (837f623)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-3/Obsidian-1.0.0-build-3.ipa",
+          "size": 2158854,
+          "minOSVersion": "18.0"
+        },
         {
           "version": "1.0.0.2",
           "buildVersion": "2",
@@ -38,11 +47,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.2",
-      "versionDate": "2026-10-22T17:36:48Z",
-      "versionDescription": "- Fix IR blaster search: prove the key on quiet 3.3 blasters, hear Tuya broadcasts, show what each device said (1d3772f)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-2/Phosphor-1.0.0-build-2.ipa",
-      "size": 1559895,
+      "version": "1.0.0.3",
+      "versionDate": "2026-10-22T17:59:36Z",
+      "versionDescription": "- Obsidian: new name and neon OLED icon, sideloaded apps over ADB, rearrangeable remote with TV key, iPhone volume buttons (837f623)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-3/Obsidian-1.0.0-build-3.ipa",
+      "size": 2158854,
       "appPermissions": {}
     }
   ],
