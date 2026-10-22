@@ -16,7 +16,7 @@ struct PhosphorWidgets: WidgetBundle {
     }
 }
 
-private let accent = Color(red: 0.49, green: 0.94, blue: 0.63)
+private let accent = Color(red: 0.72, green: 0.52, blue: 1.0)
 
 // MARK: - Timeline
 
@@ -82,7 +82,7 @@ struct WidgetBG: View {
             Color.clear
         } else {
             ZStack {
-                LinearGradient(colors: [Color(red: 0.04, green: 0.08, blue: 0.06), Color(red: 0.01, green: 0.02, blue: 0.015)],
+                LinearGradient(colors: [Color(red: 0.03, green: 0.01, blue: 0.05), Color.black],
                                startPoint: .top, endPoint: .bottom)
                 RadialGradient(colors: [accent.opacity(on ? 0.32 : 0.06), .clear], center: .topLeading, startRadius: 5, endRadius: 260)
             }
@@ -99,7 +99,7 @@ struct TVWidgetView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Image(systemName: "tv").font(.title2)
                 Spacer()
-                Text(entry.shared ? "Open Phosphor to set up the TV." : "Widget can't see Phosphor's data. Reinstall with app extensions kept.")
+                Text(entry.shared ? "Open Obsidian to set up the TV." : "Widget can't see Obsidian's data. Reinstall with app extensions kept.")
                     .font(.system(size: 13, weight: .medium))
             }
             .foregroundStyle(.white.opacity(0.8))
@@ -394,7 +394,7 @@ struct TVPowerControl: ControlWidget {
             ControlWidgetToggle("TV", isOn: on, action: TVPowerSwitchIntent()) { isOn in
                 Label(isOn ? "On" : "Off", systemImage: isOn ? "tv.fill" : "tv")
             }
-            .tint(.green)
+            .tint(.purple)
         }
         .displayName("TV power")
         .description("Turn the Sony TV on and off.")
@@ -434,7 +434,7 @@ struct TVScreenControl: ControlWidget {
             ControlWidgetToggle("TV screen", isOn: on, action: TVScreenSwitchIntent()) { isOn in
                 Label(isOn ? "Screen on" : "Screen off", systemImage: isOn ? "tv" : "tv.slash")
             }
-            .tint(.green)
+            .tint(.purple)
         }
         .displayName("TV screen")
         .description("Picture off while it keeps playing, or back on.")
@@ -448,7 +448,7 @@ struct VolumeUpControl: ControlWidget {
             ControlWidgetButton(action: VolumeUpIntent(steps: 2)) {
                 Label("TV volume up", systemImage: "speaker.plus.fill")
             }
-            .tint(.green)
+            .tint(.purple)
         }
         .displayName("TV volume up")
         .description("Two steps louder.")
@@ -462,7 +462,7 @@ struct VolumeDownControl: ControlWidget {
             ControlWidgetButton(action: VolumeDownIntent(steps: 2)) {
                 Label("TV volume down", systemImage: "speaker.minus.fill")
             }
-            .tint(.green)
+            .tint(.purple)
         }
         .displayName("TV volume down")
         .description("Two steps quieter.")
@@ -496,7 +496,7 @@ struct ActionControl: ControlWidget {
             ControlWidgetButton(action: DoActionIntent(action: value.entity)) {
                 Label(value.name, systemImage: value.symbol)
             }
-            .tint(.green)
+            .tint(.purple)
         }
         .displayName("TV button")
         .description("Any remote button, app, input, preset or power action.")

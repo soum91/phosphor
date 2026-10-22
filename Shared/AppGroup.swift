@@ -114,6 +114,24 @@ enum AppGroup {
         }
     }
 
+    static func readData(_ name: String) -> Data? {
+        let newest = containers
+            .map { $0.appendingPathComponent(name) }
+            .compactMap { url -> (URL, Date)? in
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                      let date = attrs[.modificationDate] as? Date else { return nil }
+                return (url, date)
+            }
+            .max { $0.1 < $1.1 }
+        return newest.flatMap { try? Data(contentsOf: $0.0) }
+    }
+
+    static func writeData(_ data: Data, _ name: String) {
+        for dir in containers {
+            try? data.write(to: dir.appendingPathComponent(name), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+    }
+
     static func remove(_ name: String) {
         for dir in containers { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
     }

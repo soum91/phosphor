@@ -44,6 +44,30 @@ struct SettingsView: View {
                         Text("Wi-Fi, then IR: tries Sony IP control first and falls back to the blaster when the TV doesn't answer. Power on and off use Sony's separate on/off codes over IR, so it never toggles the wrong way.")
                     }
 
+                    Section {
+                        Toggle("iPhone volume buttons control the TV", isOn: $store.phoneVolumeButtons).tint(Theme.accent)
+                    } footer: {
+                        Text("While Obsidian is open, the side buttons turn the TV up and down instead of the phone. Your phone's own volume is put back when you leave.")
+                    }
+
+                    Section {
+                        Button {
+                            Task { await store.loadSideApps() }
+                        } label: {
+                            HStack {
+                                Text(store.sideApps.isEmpty ? "Find sideloaded apps" : "Refresh sideloaded apps (\(store.sideApps.count))")
+                                Spacer()
+                                if store.adbBusy { ProgressView() }
+                            }
+                        }
+                        .disabled(store.adbBusy || !store.tv.hasWiFi)
+                        if let m = store.adbMessage { Text(m).font(.callout).foregroundStyle(.secondary) }
+                    } header: {
+                        Text("Sideloaded apps (ADB)")
+                    } footer: {
+                        Text("Sony's API only lists apps it knows. ADB finds the rest. On the TV: Settings › System › About › tap Build 7 times, then Developer options › USB debugging on. The first time, the TV asks to allow debugging: tick Always allow.")
+                    }
+
                     Section("Presets") {
                         NavigationLink { PresetListView() } label: { LabeledContent("Presets", value: "\(store.presets.count)") }
                     }

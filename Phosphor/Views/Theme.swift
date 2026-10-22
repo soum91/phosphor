@@ -1,10 +1,10 @@
 import SwiftUI
 
 enum Theme {
-    static let accent = Color(red: 0.49, green: 0.94, blue: 0.63)
-    static let deep = Color(red: 0.06, green: 0.34, blue: 0.30)
-    static let bgTop = Color(red: 0.03, green: 0.07, blue: 0.05)
-    static let bgBottom = Color(red: 0.01, green: 0.02, blue: 0.015)
+    static let accent = Color(red: 0.72, green: 0.52, blue: 1.0)
+    static let deep = Color(red: 0.95, green: 0.22, blue: 0.72)
+    static let bgTop = Color(red: 0.02, green: 0.01, blue: 0.04)
+    static let bgBottom = Color.black
     static let card = Color.white.opacity(0.06)
     static let stroke = Color.white.opacity(0.08)
     static let off = Color(white: 0.45)

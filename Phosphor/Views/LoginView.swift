@@ -22,7 +22,7 @@ struct LoginView: View {
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(Theme.accent)
                         Text("Smart Life, once").font(.system(size: 34, weight: .bold, design: .rounded))
-                        Text("Only for the IR blaster. Phosphor uses it to fetch the blaster's local key; everything after that goes straight over your Wi-Fi. The TV itself needs no account.")
+                        Text("Only for the IR blaster. Obsidian uses it to fetch the blaster's local key; everything after that goes straight over your Wi-Fi. The TV itself needs no account.")
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)

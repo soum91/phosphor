@@ -129,10 +129,17 @@ enum Apps {
             ?? list.first { $0.title.lowercased().contains(l) }
     }
 
-    static func label(_ id: String) -> String { find(id)?.title ?? id }
+    static func label(_ id: String) -> String {
+        if id.hasPrefix("side:") {
+            let pkg = String(id.dropFirst(5))
+            return SideAppStore.load().first { $0.package == pkg }?.title ?? SideApp.guessName(pkg)
+        }
+        return find(id)?.title ?? id
+    }
 
     /// Netflix and YouTube have their own remote buttons.
     static func key(_ id: String) -> String? {
+        if id.hasPrefix("side:") { return nil }
         let l = (find(id)?.title ?? id).lowercased()
         if l.contains("netflix") { return "Netflix" }
         if l.contains("youtube") && !l.contains("music") && !l.contains("kids") { return "YouTube" }
@@ -162,7 +169,7 @@ enum TV {
             let learned = LearnedCodes.load(), remote = RemoteCodes.load()
             for (i, k) in keys.enumerated() {
                 guard let code = Keys.ir(k, learned: learned, remote: remote) else {
-                    throw AppError("No IR code for \(Keys.label(k)) yet. Learn it in Phosphor › Remote.")
+                    throw AppError("No IR code for \(Keys.label(k)) yet. Learn it in Obsidian › Remote.")
                 }
                 try await IRSender.shared.send(code)
                 if i < keys.count - 1 { try? await Task.sleep(nanoseconds: 160_000_000) }
@@ -172,7 +179,7 @@ enum TV {
         }
         if let wifiError { throw wifiError }
         if !cfg.hasWiFi && !BlasterConfig.stored.isReady {
-            throw AppError("Set up the TV in Phosphor first.")
+            throw AppError("Set up the TV in Obsidian first.")
         }
         throw AppError("\(action.label) needs \(cfg.hasWiFi ? "the IR blaster" : "the TV on Wi-Fi").")
     }
@@ -222,6 +229,8 @@ enum TV {
             } else {
                 throw AppError("This TV has no input called \(id).")
             }
+        case .app(let id) where id.hasPrefix("side:"):
+            try await SideApps.launch(b.host, String(id.dropFirst(5)))
         case .app(let id):
             if let app = Apps.find(id) {
                 try await b.launch(app.uri)
@@ -376,7 +385,7 @@ actor IRSender {
     /// Any data points to the blaster (learn mode on/off). Reconnects once if the socket went stale.
     func raw(_ dps: [String: JSONValue]) async throws {
         let cfg = BlasterConfig.stored
-        guard cfg.isReady else { throw AppError("Set up the IR blaster in Phosphor first.") }
+        guard cfg.isReady else { throw AppError("Set up the IR blaster in Obsidian first.") }
         do {
             let l = try await open(cfg)
             try await l.set(dps)
@@ -425,7 +434,7 @@ actor IRSender {
     private func open(_ cfg: BlasterConfig) async throws -> LocalLink {
         if let l = link, await l.isOpen { return l }
         guard let devId = cfg.devId, let key = cfg.localKey, let host = cfg.host else {
-            throw AppError("Set up the IR blaster in Phosphor first.")
+            throw AppError("Set up the IR blaster in Obsidian first.")
         }
         let onDPS: @Sendable ([String: JSONValue]) -> Void = { dps in Task { await IRSender.shared.deliver(dps) } }
         let onClose: @Sendable (String) -> Void = { _ in Task { await IRSender.shared.closed() } }

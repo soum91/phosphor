@@ -212,6 +212,7 @@ enum Keys {
         KeyDef("Rec", "Record", "record.circle", .playback, k2(0x97, 32)),
 
         KeyDef("Input", "Input", "rectangle.portrait.and.arrow.forward", .inputs, k1(37)),
+        KeyDef("Tv", "TV", "tv", .inputs, k1(36)),
         KeyDef("Hdmi1", "HDMI 1", "1.square", .inputs, k2(0x1A, 90)),
         KeyDef("Hdmi2", "HDMI 2", "2.square", .inputs, k2(0x1A, 91)),
         KeyDef("Hdmi3", "HDMI 3", "3.square", .inputs, k2(0x1A, 92)),
@@ -328,5 +329,49 @@ enum LearnedCodes {
             }
         }
         return out
+    }
+}
+
+// MARK: - Remote layout
+
+/// One piece of the remote page: a row of buttons, the d-pad, or the volume/channel rockers.
+struct RemoteBlock: Codable, Equatable, Identifiable, Hashable {
+    enum Kind: String, Codable { case keys, dpad, rockers }
+    var id = UUID().uuidString
+    var kind: Kind
+    var keys: [String] = []
+
+    static func row(_ k: [String]) -> RemoteBlock { RemoteBlock(kind: .keys, keys: k) }
+
+    var title: String {
+        switch kind {
+        case .dpad: return "D-pad and OK"
+        case .rockers: return "Volume, mute, guide, channel"
+        case .keys: return keys.isEmpty ? "Empty row" : keys.map(Keys.label).joined(separator: " · ")
+        }
+    }
+}
+
+/// The remote page, top to bottom. Power, volume readout and Input always sit at the top.
+struct RemoteLayout: Codable, Equatable {
+    static let maxPerRow = 5
+    var blocks: [RemoteBlock]
+
+    static var standard: RemoteLayout {
+        RemoteLayout(blocks: [
+            .row(["ActionMenu", "Assists", "Tv", "Display"]),
+            RemoteBlock(kind: .dpad),
+            .row(["Return", "Home", "Options"]),
+            RemoteBlock(kind: .rockers),
+            .row(["Rewind", "Play", "Pause", "Forward"]),
+            .row(["Prev", "Stop", "SubTitle", "Next"]),
+            .row(["Netflix", "YouTube", "GooglePlay", "PicOff"]),
+            .row(["Red", "Green", "Yellow", "Blue"]),
+        ])
+    }
+
+    static var stored: RemoteLayout {
+        get { AppGroup.read(RemoteLayout.self, "layout.json") ?? .standard }
+        set { AppGroup.write(newValue, "layout.json") }
     }
 }

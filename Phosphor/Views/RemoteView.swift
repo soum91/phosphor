@@ -8,6 +8,7 @@ struct RemoteView: View {
     @State private var learnMode = false
     @State private var importing = false
     @State private var irOnly = false
+    @State private var editingLayout = false
 
     private let columns = [GridItem(.adaptive(minimum: 76), spacing: 10)]
 
@@ -62,6 +63,7 @@ struct RemoteView: View {
                         .disabled(!store.blaster.isReady)
                     Toggle(isOn: $irOnly) { Label("Always send IR", systemImage: "dot.radiowaves.right") }
                         .disabled(!store.blaster.isReady)
+                    Button { editingLayout = true } label: { Label("Rearrange buttons", systemImage: "square.grid.3x3.square") }
                     Button { importing = true } label: { Label("Import from Redshift", systemImage: "square.and.arrow.down") }
                     Button { Task { await store.loadLists() } } label: { Label("Reload the TV's buttons", systemImage: "arrow.clockwise") }
                         .disabled(!store.tv.hasWiFi)
@@ -71,6 +73,7 @@ struct RemoteView: View {
                 }
             }
         }
+        .sheet(isPresented: $editingLayout) { LayoutEditor().environmentObject(store) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { r in
             if case .success(let url) = r { store.importRedshift(from: url) }
         }
@@ -221,6 +224,44 @@ struct RemoteFace: View {
         .frame(width: 210, height: 210)
     }
 
+    private func row(_ keys: [String]) -> some View {
+        let size: CGFloat = keys.count >= 5 ? 48 : (keys.allSatisfy { ["Red", "Green", "Yellow", "Blue"].contains($0) } ? 44 : 54)
+        return HStack {
+            ForEach(Array(keys.enumerated()), id: \.offset) { i, k in
+                if i > 0 { Spacer(minLength: 4) }
+                key(k, size: size)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var rockers: some View {
+        HStack(alignment: .center) {
+            rocker("VOL", up: "VolumeUp", down: "VolumeDown")
+            Spacer()
+            VStack(spacing: 18) {
+                key("Mute", size: 58)
+                key("GGuide", size: 58)
+            }
+            Spacer()
+            rocker("CH", up: "ChannelUp", down: "ChannelDown")
+        }
+    }
+
+    @ViewBuilder
+    private func block(_ b: RemoteBlock) -> some View {
+        switch b.kind {
+        case .dpad: dpad.frame(maxWidth: .infinity)
+        case .rockers: rockers
+        case .keys:
+            if b.keys.count == 1 {
+                key(b.keys[0]).frame(maxWidth: .infinity)
+            } else {
+                row(b.keys)
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 22) {
             HStack {
@@ -233,68 +274,12 @@ struct RemoteFace: View {
                 Spacer()
                 key("Input", size: 60)
             }
-            HStack {
-                key("ActionMenu", size: 48)
-                Spacer()
-                key("Assists", size: 48)
-                Spacer()
-                key("Display", size: 48)
-            }
-            dpad
-            HStack {
-                key("Return")
-                Spacer()
-                key("Home")
-                Spacer()
-                key("Options")
-            }
-            HStack(alignment: .center) {
-                rocker("VOL", up: "VolumeUp", down: "VolumeDown")
-                Spacer()
-                VStack(spacing: 18) {
-                    key("Mute", size: 58)
-                    key("GGuide", size: 58)
+            ForEach(store.layout.blocks) { b in
+                if b.kind == .keys && b.keys.isEmpty {
+                    EmptyView()
+                } else {
+                    block(b)
                 }
-                Spacer()
-                rocker("CH", up: "ChannelUp", down: "ChannelDown")
-            }
-            Divider().overlay(Theme.stroke)
-            HStack {
-                key("Rewind")
-                Spacer()
-                key("Play")
-                Spacer()
-                key("Pause")
-                Spacer()
-                key("Forward")
-            }
-            HStack {
-                key("Prev")
-                Spacer()
-                key("Stop")
-                Spacer()
-                key("SubTitle")
-                Spacer()
-                key("Next")
-            }
-            Divider().overlay(Theme.stroke)
-            HStack {
-                key("Netflix")
-                Spacer()
-                key("YouTube")
-                Spacer()
-                key("GooglePlay")
-                Spacer()
-                key("PicOff")
-            }
-            HStack {
-                key("Red", size: 44)
-                Spacer()
-                key("Green", size: 44)
-                Spacer()
-                key("Yellow", size: 44)
-                Spacer()
-                key("Blue", size: 44)
             }
         }
         .padding(22)
@@ -304,5 +289,126 @@ struct RemoteFace: View {
         )
         .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(Theme.stroke))
         .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+    }
+}
+
+// MARK: - Rearranging the remote
+
+struct LayoutEditor: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmReset = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Theme.background()
+                List {
+                    Section {
+                        ForEach(store.layout.blocks) { b in
+                            if b.kind == .keys {
+                                NavigationLink { RowEditor(blockID: b.id) } label: { blockLabel(b) }
+                            } else {
+                                blockLabel(b)
+                            }
+                        }
+                        .onMove { store.layout.blocks.move(fromOffsets: $0, toOffset: $1) }
+                        .onDelete { store.layout.blocks.remove(atOffsets: $0) }
+                    } header: {
+                        Text("Top to bottom")
+                    } footer: {
+                        Text("Drag the handles to reorder, swipe to remove, tap a row to change its buttons. Power and Input always stay at the top.")
+                    }
+                    Section {
+                        Button { addRow() } label: { Label("Add a row of buttons", systemImage: "plus.rectangle.on.rectangle") }
+                        if !store.layout.blocks.contains(where: { $0.kind == .dpad }) {
+                            Button { store.layout.blocks.append(RemoteBlock(kind: .dpad)) } label: { Label("Add the d-pad", systemImage: "dpad") }
+                        }
+                        if !store.layout.blocks.contains(where: { $0.kind == .rockers }) {
+                            Button { store.layout.blocks.append(RemoteBlock(kind: .rockers)) } label: { Label("Add volume and channel", systemImage: "plusminus") }
+                        }
+                        Button("Reset to the standard layout", role: .destructive) { confirmReset = true }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Rearrange")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { EditButton() }
+                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+            }
+            .confirmationDialog("Reset the remote layout?", isPresented: $confirmReset, titleVisibility: .visible) {
+                Button("Reset", role: .destructive) { store.layout = .standard }
+            }
+        }
+    }
+
+    private func blockLabel(_ b: RemoteBlock) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: b.kind == .dpad ? "dpad.fill" : (b.kind == .rockers ? "plusminus.circle.fill" : "circle.grid.3x3.fill"))
+                .foregroundStyle(Theme.accent).frame(width: 26)
+            Text(b.title).lineLimit(2)
+        }
+    }
+
+    private func addRow() {
+        store.layout.blocks.append(.row([]))
+    }
+}
+
+struct RowEditor: View {
+    @EnvironmentObject var store: Store
+    let blockID: String
+
+    private var index: Int? { store.layout.blocks.firstIndex { $0.id == blockID } }
+    private var keys: [String] { index.map { store.layout.blocks[$0].keys } ?? [] }
+
+    var body: some View {
+        ZStack {
+            Theme.background()
+            List {
+                Section {
+                    if keys.isEmpty {
+                        Text("No buttons yet. Add some below.").foregroundStyle(.secondary)
+                    }
+                    ForEach(keys, id: \.self) { k in
+                        Label(Keys.label(k), systemImage: Keys.def(k)?.symbol ?? "circle")
+                    }
+                    .onMove { from, to in update { $0.move(fromOffsets: from, toOffset: to) } }
+                    .onDelete { idx in update { $0.remove(atOffsets: idx) } }
+                } header: {
+                    Text("This row, left to right")
+                } footer: {
+                    Text("Up to \(RemoteLayout.maxPerRow) buttons in a row.")
+                }
+                ForEach(KeyGroup.allCases) { g in
+                    let options = Keys.all(remote: store.remote).filter { $0.group == g && !keys.contains($0.id) }
+                    if !options.isEmpty {
+                        Section("Add: " + g.rawValue) {
+                            ForEach(options) { d in
+                                Button {
+                                    update { $0.append(d.id) }
+                                } label: {
+                                    Label(d.label, systemImage: d.symbol ?? "circle")
+                                }
+                                .disabled(keys.count >= RemoteLayout.maxPerRow)
+                            }
+                        }
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("Row")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { EditButton() }
+    }
+
+    private func update(_ f: (inout [String]) -> Void) {
+        guard let i = index else { return }
+        var k = store.layout.blocks[i].keys
+        f(&k)
+        store.layout.blocks[i].keys = Array(k.prefix(RemoteLayout.maxPerRow))
     }
 }

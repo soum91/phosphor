@@ -48,6 +48,39 @@ final class Store: ObservableObject {
 
     @Published var presets = PresetStore.load() { didSet { if presets != oldValue { PresetStore.save(presets) } } }
 
+    // Sideloaded apps, over ADB
+    @Published var sideApps = SideAppStore.load() { didSet { if sideApps != oldValue { SideAppStore.save(sideApps); WidgetCenter.shared.reloadAllTimelines() } } }
+    @Published var adbBusy = false
+    @Published var adbMessage: String?
+
+    // Remote layout and phone volume buttons
+    @Published var layout = RemoteLayout.stored { didSet { if layout != oldValue { RemoteLayout.stored = layout } } }
+    @Published var phoneVolumeButtons = (UserDefaults.standard.object(forKey: "phoneVolumeButtons") as? Bool) ?? true {
+        didSet {
+            UserDefaults.standard.set(phoneVolumeButtons, forKey: "phoneVolumeButtons")
+            updateVolumeButtons(active: phoneVolumeButtons)
+        }
+    }
+
+    /// Side buttons drive the TV while the app is in front (and the TV isn't known to be off).
+    func updateVolumeButtons(active: Bool) {
+        let vb = VolumeButtons.shared
+        guard active, phoneVolumeButtons, isSetUp else { vb.stop(); return }
+        vb.shouldIntercept = { [weak self] in self?.state.power != false }
+        vb.onStep = { [weak self] n in
+            guard let self else { return }
+            Task { @MainActor in
+                do {
+                    try await TV.perform(n > 0 ? .volumeUp(n) : .volumeDown(-n), cfg: self.tv)
+                    self.state = TVState.stored
+                } catch {
+                    self.show(error.localizedDescription)
+                }
+            }
+        }
+        vb.start()
+    }
+
     // IR blaster (same one Redshift and Subwave use)
     @Published var blaster = BlasterConfig.stored { didSet { if blaster != oldValue { BlasterConfig.stored = blaster } } }
     @Published var blasterState: LinkState = .off
@@ -195,6 +228,59 @@ final class Store: ObservableObject {
         }
     }
 
+    // MARK: - Sideloaded apps (ADB)
+
+    /// Packages Sony's own list already shows, so they don't appear twice.
+    private func sonyListed(_ pkg: String) -> Bool {
+        apps.contains { $0.uri.contains(pkg) }
+    }
+
+    /// Asks the TV for its third-party apps. The first time, the TV asks you to allow debugging.
+    func loadSideApps() async {
+        guard tv.hasWiFi else { adbMessage = "Set up the TV on Wi-Fi first."; return }
+        adbBusy = true
+        adbMessage = "Connecting… if the TV asks \"Allow USB debugging?\", tick Always allow and press Allow."
+        defer { adbBusy = false }
+        do {
+            let pkgs = try await SideApps.list(tv.host, approvalWait: 60)
+            var next: [SideApp] = []
+            for p in pkgs where !sonyListed(p) {
+                next.append(sideApps.first { $0.package == p } ?? SideApp(package: p))
+            }
+            // Keep your order for ones already there, new ones at the end.
+            let old = sideApps.map(\.package)
+            next.sort { (old.firstIndex(of: $0.package) ?? Int.max, $0.title) < (old.firstIndex(of: $1.package) ?? Int.max, $1.title) }
+            sideApps = next
+            adbMessage = next.isEmpty ? "Connected. No sideloaded apps the TV can open." : "Found \(next.count) app\(next.count == 1 ? "" : "s")."
+        } catch {
+            adbMessage = error.localizedDescription
+        }
+    }
+
+    func open(_ side: SideApp) {
+        haptic.impactOccurred()
+        Task {
+            do {
+                if state.power != true {
+                    try await TV.perform(.power(true), cfg: tv)
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                }
+                try await TV.perform(.app("side:" + side.package), cfg: tv)
+                state = TVState.stored
+            } catch {
+                show(error.localizedDescription)
+            }
+        }
+    }
+
+    func rename(_ side: SideApp, _ name: String) {
+        guard let i = sideApps.firstIndex(of: side) else { return }
+        let n = name.trimmingCharacters(in: .whitespaces)
+        sideApps[i].name = n.isEmpty ? nil : n
+    }
+
+    func hide(_ side: SideApp) { sideApps.removeAll { $0 == side } }
+
     // MARK: - TV setup
 
     /// Checks the address and key, then reads the TV's name, model and lists.
@@ -205,7 +291,7 @@ final class Store: ObservableObject {
         do {
             _ = try await b.interfaceInfo()
         } catch let e as BraviaError where e.unreachable {
-            return "Nothing answered at \(h). Check the IP, that the TV is on and on the same Wi-Fi, and that Phosphor has Local Network access (iOS Settings › Phosphor)."
+            return "Nothing answered at \(h). Check the IP, that the TV is on and on the same Wi-Fi, and that Obsidian has Local Network access (iOS Settings › Obsidian)."
         } catch {
             return "\(h) answered but doesn't look like a Sony TV with IP control: \(error.localizedDescription)"
         }
@@ -397,7 +483,7 @@ final class Store: ObservableObject {
             if let heard { hosts.removeAll { $0 == heard.ip }; hosts.insert(heard.ip, at: 0) }
             if hosts.isEmpty {
                 blasterLog = log
-                blasterState = .failed("Nothing on your Wi-Fi answered on Tuya's port. Allow Local Network for Phosphor in iOS Settings, or type the blaster's IP.")
+                blasterState = .failed("Nothing on your Wi-Fi answered on Tuya's port. Allow Local Network for Obsidian in iOS Settings, or type the blaster's IP.")
                 return
             }
             blasterState = .searching("Checking the key on \(hosts.count) Tuya device\(hosts.count == 1 ? "" : "s")…")

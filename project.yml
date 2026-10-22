@@ -25,7 +25,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: Phosphor
+        CFBundleDisplayName: Obsidian
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIApplicationSceneManifest:
@@ -33,11 +33,11 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.soum91.phosphor.refresh]
-        NSLocalNetworkUsageDescription: Phosphor talks to your Sony TV and IR blaster directly over Wi-Fi.
+        NSLocalNetworkUsageDescription: Obsidian talks to your Sony TV and IR blaster directly over Wi-Fi.
         NSBonjourServices: [_googlecast._tcp, _androidtvremote2._tcp]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        NSPhotoLibraryAddUsageDescription: Phosphor saves the Smart Life login QR to Photos so you can pick it from Smart Life's scanner.
+        NSPhotoLibraryAddUsageDescription: Obsidian saves the Smart Life login QR to Photos so you can pick it from Smart Life's scanner.
         LSApplicationQueriesSchemes: [smartlife, tuyasmart]
         CFBundleURLTypes:
           - CFBundleURLName: com.soum91.phosphor
@@ -63,8 +63,8 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: Phosphor
-        NSLocalNetworkUsageDescription: Phosphor talks to your Sony TV and IR blaster directly over Wi-Fi.
+        CFBundleDisplayName: Obsidian
+        NSLocalNetworkUsageDescription: Obsidian talks to your Sony TV and IR blaster directly over Wi-Fi.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSExtension:

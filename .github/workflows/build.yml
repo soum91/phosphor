@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  APP: Phosphor
+  APP: Obsidian
   BUILD: ${{ github.run_number }}
   TAG: build-${{ github.run_number }}
 
@@ -98,7 +98,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
-          name: Phosphor ${{ env.VERSION }} build ${{ env.BUILD }}
+          name: Obsidian ${{ env.VERSION }} build ${{ env.BUILD }}
           body_path: release-notes.md
           files: ${{ env.IPA }}
           make_latest: true

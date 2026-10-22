@@ -204,7 +204,7 @@ struct BlasterPickerView: View {
                 } header: {
                     Text("Pick the IR blaster")
                 } footer: {
-                    Text("Phosphor saves its local key and talks to it over Wi-Fi from here on, same as Redshift and Subwave.")
+                    Text("Obsidian saves its local key and talks to it over Wi-Fi from here on, same as Redshift and Subwave.")
                 }
                 if let e = store.setupError { Section { Text(e).foregroundStyle(Theme.danger) } }
                 Section { Button("Sign out of Smart Life", role: .destructive) { store.signOutCloud() } }

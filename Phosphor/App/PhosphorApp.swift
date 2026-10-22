@@ -16,6 +16,7 @@ struct PhosphorApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .background(VolumeHUDHider().frame(width: 1, height: 1).opacity(0.01))
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
@@ -25,7 +26,11 @@ struct PhosphorApp: App {
             case .active:
                 store.startPolling()
                 if store.blaster.isReady, !store.blasterState.isConnected { store.connectBlaster() }
+                store.updateVolumeButtons(active: true)
+            case .inactive:
+                store.updateVolumeButtons(active: false)
             case .background:
+                store.updateVolumeButtons(active: false)
                 store.stopPolling()
                 Task { await IRSender.shared.drop() }
                 Self.scheduleRefresh()
@@ -49,9 +54,9 @@ struct PhosphorApp: App {
     }
 }
 
-/// Siri phrases. These work with no setup: "Hey Siri, TV off in Phosphor".
+/// Siri phrases. These work with no setup: "Hey Siri, TV off in Obsidian".
 struct PhosphorShortcuts: AppShortcutsProvider {
-    static var shortcutTileColor: ShortcutTileColor = .lime
+    static var shortcutTileColor: ShortcutTileColor = .purple
 
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: TVOffIntent(), phrases: [

@@ -71,8 +71,9 @@ struct TVAppEntity: AppEntity, Identifiable {
 struct TVAppQuery: EntityStringQuery {
     static func everything() -> [TVAppEntity] {
         let known = AppCache.load()
-        if !known.isEmpty { return known.map { TVAppEntity(id: $0.uri, name: $0.title) } }
-        return ["Netflix", "YouTube", "Prime Video", "Disney+", "Spotify"].map { TVAppEntity(id: $0, name: $0) }
+        let side = SideAppStore.load().map { TVAppEntity(id: "side:" + $0.package, name: $0.title) }
+        if !known.isEmpty { return known.map { TVAppEntity(id: $0.uri, name: $0.title) } + side }
+        return ["Netflix", "YouTube", "Prime Video", "Disney+", "Spotify"].map { TVAppEntity(id: $0, name: $0) } + side
     }
     func entities(for identifiers: [String]) async throws -> [TVAppEntity] {
         let all = Self.everything()
@@ -376,7 +377,7 @@ struct LaunchAppIntent: AppIntent {
 
 struct RunPresetIntent: AppIntent {
     static var title: LocalizedStringResource = "Run TV Preset"
-    static var description = IntentDescription("Runs one of your Phosphor presets.")
+    static var description = IntentDescription("Runs one of your Obsidian presets.")
 
     @Parameter(title: "Preset")
     var preset: PresetEntity
@@ -472,7 +473,7 @@ struct GetTVPowerIntent: AppIntent {
     static var description = IntentDescription("Asks the TV over Wi-Fi whether it's on. Returns true or false.")
 
     func perform() async throws -> some IntentResult & ReturnsValue<Bool> {
-        guard TVConfig.stored.hasWiFi else { throw AppError("Add the TV's Wi-Fi address in Phosphor first.") }
+        guard TVConfig.stored.hasWiFi else { throw AppError("Add the TV's Wi-Fi address in Obsidian first.") }
         let s = await TV.refresh()
         reload()
         return .result(value: s.power ?? false)

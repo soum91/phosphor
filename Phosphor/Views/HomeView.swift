@@ -84,7 +84,7 @@ struct HomeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(store.tv.name.isEmpty ? "Phosphor" : store.tv.name)
+                Text(store.tv.name.isEmpty ? "Obsidian" : store.tv.name)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -111,7 +111,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             Image(systemName: "tv.and.mediabox.fill").font(.system(size: 34)).foregroundStyle(Theme.accent)
             Text("Let's find your TV").font(.title2.bold())
-            Text("Phosphor talks to the Bravia straight over your Wi-Fi (Sony's IP control) and through your Tuya IR blaster when the TV is asleep or its network side isn't answering. No Sony or Google account.")
+            Text("Obsidian talks to the Bravia straight over your Wi-Fi (Sony's IP control) and through your Tuya IR blaster when the TV is asleep or its network side isn't answering. No Sony or Google account.")
                 .foregroundStyle(.secondary)
             Button { showSetup = true } label: {
                 Text("Set up").fontWeight(.semibold)
@@ -126,7 +126,7 @@ struct HomeView: View {
     private var authCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("The TV turned down the key", systemImage: "key.slash").font(.headline).foregroundStyle(Theme.danger)
-            Text("Check Settings › Network & Internet › Home network › IP control on the TV, then fix it in Phosphor's settings. IR still works meanwhile.")
+            Text("Check Settings › Network & Internet › Home network › IP control on the TV, then fix it in Obsidian's settings. IR still works meanwhile.")
                 .font(.callout).foregroundStyle(.secondary)
             Button("Open settings") { showSettings = true }.font(.callout.weight(.semibold))
         }
@@ -305,6 +305,49 @@ struct HomeView: View {
                     }
                 }
             }
+            sideApps
+        }
+    }
+
+    @State private var renaming: SideApp?
+    @State private var newName = ""
+
+    @ViewBuilder
+    private var sideApps: some View {
+        if !store.sideApps.isEmpty {
+            SectionTitle(text: "Sideloaded").padding(.top, 8)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 12)], spacing: 14) {
+                ForEach(store.sideApps) { a in
+                    Button { store.open(a) } label: { SideTile(app: a) }
+                        .buttonStyle(PressStyle())
+                        .contextMenu {
+                            Button { newName = a.title; renaming = a } label: { Label("Rename", systemImage: "pencil") }
+                            Button(role: .destructive) { store.hide(a) } label: { Label("Hide", systemImage: "eye.slash") }
+                            Text(a.package)
+                        }
+                }
+            }
+            .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField("Name", text: $newName)
+                Button("Save") { if let r = renaming { store.rename(r, newName) }; renaming = nil }
+                Button("Cancel", role: .cancel) { renaming = nil }
+            }
+        } else if store.tv.hasWiFi {
+            Button { Task { await store.loadSideApps() } } label: {
+                HStack {
+                    Image(systemName: "shippingbox.fill").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show sideloaded apps").font(.subheadline.weight(.semibold))
+                        Text(store.adbMessage ?? "Over ADB. Needs USB debugging on in the TV's Developer options.")
+                            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    if store.adbBusy { ProgressView() }
+                }
+                .foregroundStyle(.white)
+            }
+            .disabled(store.adbBusy)
+            .card()
         }
     }
 
@@ -359,6 +402,37 @@ struct AppTile: View {
             .frame(width: 62, height: 62)
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Theme.stroke))
+            Text(app.title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// A sideloaded app: no icon comes over ADB, so a neon monogram stands in.
+struct SideTile: View {
+    let app: SideApp
+
+    private var hue: Double {
+        Double(app.package.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xffff } % 360) / 360
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.black)
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(Color(hue: hue, saturation: 0.75, brightness: 1), lineWidth: 2)
+                    .shadow(color: Color(hue: hue, saturation: 0.8, brightness: 1).opacity(0.8), radius: 6)
+                Text(String(app.title.prefix(1)).uppercased())
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(hue: hue, saturation: 0.45, brightness: 1))
+                    .shadow(color: Color(hue: hue, saturation: 0.8, brightness: 1), radius: 8)
+            }
+            .frame(width: 62, height: 62)
             Text(app.title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.75))
