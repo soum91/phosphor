@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.5",
+          "buildVersion": "5",
+          "date": "2026-10-22T19:05:55Z",
+          "localizedDescription": "- Mouse tab: real HID mouse and keyboard over ADB, trackpad, click buttons, notched wheel, air mouse (72a89d6)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-5/Obsidian-1.0.0-build-5.ipa",
+          "size": 2455520,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.4",
           "buildVersion": "4",
           "date": "2026-10-22T18:18:27Z",
@@ -56,11 +65,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.4",
-      "versionDate": "2026-10-22T18:18:27Z",
-      "versionDescription": "- Real names and icons for sideloaded apps, edit mode on the home page and remote, Wi-Fi/IR per press (5186788)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-4/Obsidian-1.0.0-build-4.ipa",
-      "size": 2342639,
+      "version": "1.0.0.5",
+      "versionDate": "2026-10-22T19:05:55Z",
+      "versionDescription": "- Mouse tab: real HID mouse and keyboard over ADB, trackpad, click buttons, notched wheel, air mouse (72a89d6)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-5/Obsidian-1.0.0-build-5.ipa",
+      "size": 2455520,
       "appPermissions": {}
     }
   ],
