@@ -83,9 +83,12 @@ struct DrawableLoader {
             if let a = n.attr("drawable", id: 0x0101_0199) { inner = try await value(a, depth: depth) }
             if inner == nil, let c = n.children.first { inner = try await node(c, depth: depth + 1) }
             guard let inner else { return nil }
-            let all = frac(n.attr("inset"))
-            return .inset(inner, left: frac(n.attr("insetLeft")) ?? all ?? 0, top: frac(n.attr("insetTop")) ?? all ?? 0,
-                          right: frac(n.attr("insetRight")) ?? all ?? 0, bottom: frac(n.attr("insetBottom")) ?? all ?? 0)
+            let all: CGFloat = frac(n.attr("inset")) ?? 0
+            let l: CGFloat = frac(n.attr("insetLeft")) ?? all
+            let t: CGFloat = frac(n.attr("insetTop")) ?? all
+            let r: CGFloat = frac(n.attr("insetRight")) ?? all
+            let b: CGFloat = frac(n.attr("insetBottom")) ?? all
+            return .inset(inner, left: l, top: t, right: r, bottom: b)
         case "layer-list":
             var out: [Drawable] = []
             for item in n.children where item.name == "item" {
