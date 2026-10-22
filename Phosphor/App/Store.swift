@@ -258,7 +258,8 @@ final class Store: ObservableObject {
 
     /// Packages Sony's own list already shows, so they don't appear twice.
     private func sonyListed(_ pkg: String) -> Bool {
-        apps.contains { $0.uri.contains(pkg) }
+        // Sony's URIs look like com.sony.dtv.<package>.<activity>.
+        apps.contains { $0.uri.hasPrefix("com.sony.dtv.\(pkg).") }
     }
 
     /// Asks the TV for its third-party apps. The first time, the TV asks you to allow debugging.
@@ -271,33 +272,67 @@ final class Store: ObservableObject {
         defer { Task { await adb.close() } }
         do {
             try await adb.connect(approvalWait: 60)
-            let pkgs = try await SideApps.list(adb)
+            let listing = try await SideApps.list(adb)
             var next: [SideApp] = []
-            for p in pkgs where !sonyListed(p) {
-                next.append(sideApps.first { $0.package == p } ?? SideApp(package: p))
+            // Every third-party app the Sony list doesn't already show, plus anything you added by hand.
+            for p in listing.third where !sonyListed(p) {
+                var a = sideApps.first { $0.package == p } ?? SideApp(package: p)
+                a.launchable = listing.launchable.isEmpty ? nil : listing.launchable.contains(p)
+                next.append(a)
+            }
+            for a in sideApps where a.pinned == true && !next.contains(where: { $0.package == a.package }) {
+                next.append(a)
             }
             next.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             sideApps = next
-            // Real names and icons, straight from each APK (only for ones not read yet).
-            let todo = next.filter { $0.label == nil || $0.hasIcon == nil }
-            for (n, app) in todo.enumerated() {
-                adbMessage = "Reading names and icons \(n + 1) of \(todo.count)…"
-                guard let r = try? await APKInfo.read(adb, package: app.package),
-                      let i = sideApps.firstIndex(where: { $0.package == app.package }) else { continue }
-                var a = sideApps[i]
-                if let l = r.label { a.label = l }
-                if let icon = r.icon {
-                    AppGroup.writeData(icon, SideApp.iconFile(app.package))
-                    a.hasIcon = true
-                } else {
-                    a.hasIcon = false
-                }
-                sideApps[i] = a
-            }
+            await readNames(adb, next.filter { $0.label == nil || $0.hasIcon == nil }.map(\.package))
             sideApps.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-            adbMessage = sideApps.isEmpty ? "Connected. No sideloaded apps the TV can open." : "Found \(sideApps.count) app\(sideApps.count == 1 ? "" : "s")."
+            adbMessage = sideApps.isEmpty ? "Connected. No sideloaded apps on the TV." : "\(sideApps.count) app\(sideApps.count == 1 ? "" : "s")."
         } catch {
             adbMessage = error.localizedDescription
+        }
+    }
+
+    /// Real names and icons, straight from each APK. The list updates as each one comes in.
+    private func readNames(_ adb: ADB, _ pkgs: [String]) async {
+        for (n, pkg) in pkgs.enumerated() {
+            adbMessage = "Reading names and icons \(n + 1) of \(pkgs.count)…"
+            guard let r = try? await APKInfo.read(adb, package: pkg),
+                  let i = sideApps.firstIndex(where: { $0.package == pkg }) else { continue }
+            var a = sideApps[i]
+            if let l = r.label { a.label = l }
+            if let icon = r.icon {
+                AppGroup.writeData(icon, SideApp.iconFile(pkg))
+                a.hasIcon = true
+            } else {
+                a.hasIcon = false
+            }
+            sideApps[i] = a
+        }
+    }
+
+    /// Every package on the TV, for the "Add any app" picker.
+    func allPackages() async throws -> (third: [String], system: [String]) {
+        let adb = ADB(host: tv.host)
+        defer { Task { await adb.close() } }
+        try await adb.connect(approvalWait: 60)
+        return try await SideApps.everything(adb)
+    }
+
+    /// Adds any app by hand (system apps too) and reads its name and icon.
+    func addSideApp(_ pkg: String) {
+        if let i = sideApps.firstIndex(where: { $0.package == pkg }) {
+            sideApps[i].pinned = true
+        } else {
+            sideApps.append(SideApp(package: pkg, pinned: true))
+        }
+        home.hiddenApps.removeAll { $0 == "side:" + pkg }
+        Task {
+            let adb = ADB(host: tv.host)
+            defer { Task { await adb.close() } }
+            guard (try? await adb.connect()) != nil else { return }
+            await readNames(adb, [pkg])
+            adbMessage = nil
         }
     }
 

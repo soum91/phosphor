@@ -31,6 +31,7 @@ struct HomeView: View {
     @State private var showKeyboard = false
     @State private var editing: TVPreset?
     @State private var editMode = false
+    @State private var addingApp = false
     @State private var addingQuick = false
 
     private var isOn: Bool { store.state.power == true }
@@ -64,6 +65,7 @@ struct HomeView: View {
             .sheet(isPresented: $showSettings) { SettingsView().environmentObject(store) }
             .sheet(isPresented: $showKeyboard) { KeyboardSheet().environmentObject(store).presentationDetents([.height(260)]) }
             .sheet(item: $editing) { p in PresetEditor(preset: p).environmentObject(store) }
+            .sheet(isPresented: $addingApp) { AddAppSheet().environmentObject(store) }
             .sheet(isPresented: $addingQuick) {
                 ButtonPicker(includeSpecials: true, exclude: store.home.quick) { id in
                     if store.home.quick.count < HomeLayout.maxQuick { store.home.quick.append(id) }
@@ -472,6 +474,9 @@ struct HomeView: View {
                     Button { Task { await store.loadSideApps() } } label: { Image(systemName: "arrow.clockwise") }
                         .font(.caption.weight(.bold))
                         .disabled(store.adbBusy)
+                    Button { addingApp = true } label: { Image(systemName: "plus") }
+                        .font(.caption.weight(.bold))
+                        .padding(.leading, 10)
                 }
                 if store.adbBusy, let m = store.adbMessage { Text(m).font(.caption).foregroundStyle(.secondary) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 12)], spacing: 14) {
@@ -514,6 +519,10 @@ struct HomeView: View {
             }
             .disabled(store.adbBusy)
             .card()
+            Button { addingApp = true } label: {
+                Label("Add any app, system apps too", systemImage: "plus.app").font(.subheadline.weight(.semibold))
+            }
+            .padding(.horizontal, 4)
         }
     }
 
@@ -575,6 +584,92 @@ struct AppTile: View {
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// Every package on the TV, searchable. Pick any to put it on the home page.
+struct AddAppSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    @State private var third: [String] = []
+    @State private var system: [String] = []
+    @State private var loading = true
+    @State private var error: String?
+    @State private var search = ""
+    @State private var showSystem = false
+
+    private var list: [String] {
+        let base = showSystem ? system : third
+        guard !search.isEmpty else { return base }
+        let q = search.lowercased()
+        return base.filter { $0.lowercased().contains(q) || name($0).lowercased().contains(q) }
+    }
+
+    private func name(_ pkg: String) -> String {
+        store.sideApps.first { $0.package == pkg }?.title ?? SideApp.guessName(pkg)
+    }
+
+    private func added(_ pkg: String) -> Bool {
+        store.sideApps.contains { $0.package == pkg } && !store.home.hiddenApps.contains("side:" + pkg)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Theme.background()
+                List {
+                    Picker("", selection: $showSystem) {
+                        Text("Installed (\(third.count))").tag(false)
+                        Text("System (\(system.count))").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                    if loading {
+                        HStack { ProgressView(); Text("Asking the TV…").foregroundStyle(.secondary) }
+                    }
+                    if let error { Text(error).foregroundStyle(Theme.danger) }
+                    ForEach(list, id: \.self) { pkg in
+                        Button {
+                            if added(pkg) {
+                                store.home.hiddenApps.append("side:" + pkg)
+                            } else {
+                                store.addSideApp(pkg)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                if let d = store.sideApps.first(where: { $0.package == pkg })?.iconData, let img = UIImage(data: d) {
+                                    Image(uiImage: img).resizable().frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    Image(systemName: "app.dashed").font(.system(size: 22)).frame(width: 32, height: 32).foregroundStyle(.secondary)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(name(pkg)).foregroundStyle(.white)
+                                    Text(pkg).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                Image(systemName: added(pkg) ? "checkmark.circle.fill" : "plus.circle")
+                                    .foregroundStyle(added(pkg) ? Theme.accent : .secondary)
+                            }
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .searchable(text: $search, prompt: "Search apps or packages")
+            }
+            .navigationTitle("Add apps")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .task {
+                do {
+                    let r = try await store.allPackages()
+                    third = r.third
+                    system = r.system
+                } catch {
+                    self.error = error.localizedDescription
+                }
+                loading = false
+            }
+        }
     }
 }
 

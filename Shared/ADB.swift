@@ -21,6 +21,10 @@ struct SideApp: Codable, Hashable, Identifiable {
     var label: String?
     /// True once its icon has been saved (icons/<package>.png in the App Group).
     var hasIcon: Bool?
+    /// Added by hand from "Add any app" (kept even if it isn't a third-party app).
+    var pinned: Bool?
+    /// Has a launcher entry. Apps without one are still listed; opening falls back to their main screen.
+    var launchable: Bool?
     var id: String { package }
     var title: String { name ?? label ?? SideApp.guessName(package) }
 
@@ -410,33 +414,60 @@ enum SideApps {
         return out
     }
 
-    /// Third-party packages that have a launcher activity (TV or phone).
-    static func list(_ adb: ADB) async throws -> [String] {
-        var r: [String] = []
-        for c in ["pm list packages -3",
-                  "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER",
-                  "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"] {
-            r.append(try await adb.shell(c))
-        }
-        let third = r[0].split(whereSeparator: \.isNewline).compactMap { line -> String? in
+    struct Listing { var third: [String]; var launchable: Set<String> }
+
+    /// Package names found anywhere in a command's output, by the "package/activity" pattern (format-proof).
+    private static func components(_ text: String) -> Set<String> {
+        guard let re = try? NSRegularExpression(pattern: "([A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+)/") else { return [] }
+        let ns = text as NSString
+        return Set(re.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) })
+    }
+
+    private static func packages(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isNewline).compactMap { line -> String? in
             let s = line.trimmingCharacters(in: .whitespaces)
             return s.hasPrefix("package:") ? String(s.dropFirst(8)) : nil
         }
-        // query-activities --components prints "pkg/.Activity" lines; keep only apps you can actually open.
-        let launchable = Set((r[1] + "\n" + r[2]).split(whereSeparator: \.isNewline).compactMap { line -> String? in
-            let s = line.trimmingCharacters(in: .whitespaces)
-            guard let slash = s.firstIndex(of: "/") else { return nil }
-            return String(s[..<slash])
-        })
-        let pkgs = launchable.isEmpty ? third : third.filter { launchable.contains($0) }
-        return pkgs.sorted()
     }
 
-    static func launch(_ host: String, _ pkg: String) async throws {
-        let r = try await run(host, ["monkey -p \(pkg) -c android.intent.category.LEANBACK_LAUNCHER 1"])
-        if r[0].contains("No activities found") || r[0].contains("aborted") {
-            let r2 = try await run(host, ["monkey -p \(pkg) -c android.intent.category.LAUNCHER 1"])
-            if r2[0].contains("No activities found") { throw ADBError("\(SideApp.guessName(pkg)) has nothing to open on a TV.") }
+    /// Every third-party app, and which of them have a launcher entry (TV or phone).
+    static func list(_ adb: ADB) async throws -> Listing {
+        let third = packages(try await adb.shell("pm list packages -3"))
+        var launch = Set<String>()
+        for c in ["cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER",
+                  "cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"] {
+            launch.formUnion(components((try? await adb.shell(c)) ?? ""))
         }
+        return Listing(third: third.sorted(), launchable: launch)
+    }
+
+    /// Everything installed, system apps included, for the "Add any app" picker.
+    static func everything(_ adb: ADB) async throws -> (third: [String], system: [String]) {
+        let third = packages(try await adb.shell("pm list packages -3"))
+        let system = packages(try await adb.shell("pm list packages -s"))
+        return (third.sorted(), system.sorted())
+    }
+
+    /// TV launcher, then phone launcher, then whatever main screen the app has.
+    static func launch(_ host: String, _ pkg: String) async throws {
+        let adb = ADB(host: host)
+        defer { Task { await adb.close() } }
+        try await adb.connect()
+        func ok(_ out: String) -> Bool { !out.contains("No activities found") && !out.contains("aborted") && !out.contains("Error") }
+        for cat in ["android.intent.category.LEANBACK_LAUNCHER", "android.intent.category.LAUNCHER"] {
+            let out = try await adb.shell("monkey -p \(pkg) -c \(cat) 1")
+            if ok(out) { return }
+        }
+        let dump = try await adb.shell("dumpsys package \(pkg)", timeout: 15)
+        if let r = dump.range(of: "android.intent.action.MAIN") {
+            let after = String(dump[r.upperBound...])
+            if let re = try? NSRegularExpression(pattern: NSRegularExpression.escapedPattern(for: pkg) + "/[A-Za-z0-9_.$]+"),
+               let m = re.firstMatch(in: after, range: NSRange(location: 0, length: (after as NSString).length)) {
+                let comp = (after as NSString).substring(with: m.range)
+                let out = try await adb.shell("am start -n \(comp)")
+                if !out.contains("Error") { return }
+            }
+        }
+        throw ADBError("\(SideApp.guessName(pkg)) has no screen to open. It may be a background service or a plugin.")
     }
 }
