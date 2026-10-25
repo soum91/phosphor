@@ -6,7 +6,10 @@ import AppIntents
 struct TVHomeControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.soum91.phosphor.TVHomeControl") {
-            ControlWidgetButton(action: PressButtonIntent(key: "Home")) { Label("TV Home", systemImage: "house.fill") }
+            ControlWidgetButton(action: PressButtonIntent(key: "Home")) {
+                Image(systemName: "house.fill")
+                    .controlWidgetActionHint("Open the TV home screen")
+            }
         }.displayName("TV Home").description("TV Home")
     }
 }
