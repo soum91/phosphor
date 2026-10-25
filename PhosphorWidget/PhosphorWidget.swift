@@ -5,6 +5,8 @@ import AppIntents
 @main
 struct PhosphorWidgets: WidgetBundle {
     var body: some Widget {
+        TVHomeControl()
+
         TVWidget()
         ButtonWidget()
         TVPowerControl()
@@ -330,7 +332,7 @@ struct ButtonWidget: Widget {
         }
         .configurationDisplayName("TV button")
         .description("One tap: any remote button, app, input, preset, power or screen off. Long-press the widget › Edit to pick.")
-        .supportedFamilies([.systemSmall, .accessoryCircular])
+        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
     }
 }
 
@@ -346,6 +348,8 @@ struct ButtonWidgetView: View {
                         AccessoryWidgetBackground()
                         Image(systemName: a.symbol).font(.system(size: 22, weight: .semibold))
                     }
+                } else if family == .accessoryRectangular {
+                    Label(a.name, systemImage: a.symbol).font(.headline).lineLimit(2)
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: a.symbol)
