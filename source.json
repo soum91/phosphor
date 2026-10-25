@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.11",
+          "buildVersion": "11",
+          "date": "2026-10-25T22:36:56Z",
+          "localizedDescription": "- Test explicit SF Symbol icon for TV Home control (9b25f77)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-11/Obsidian-1.0.0-build-11.ipa",
+          "size": 2566450,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.10",
           "buildVersion": "10",
           "date": "2026-10-25T13:25:52Z",
@@ -101,11 +110,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.10",
-      "versionDate": "2026-10-25T13:25:52Z",
-      "versionDescription": "- Extend Obsidian Lock Screen buttons and add TV Home control (02a6a35)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-10/Obsidian-1.0.0-build-10.ipa",
-      "size": 2566178,
+      "version": "1.0.0.11",
+      "versionDate": "2026-10-25T22:36:56Z",
+      "versionDescription": "- Test explicit SF Symbol icon for TV Home control (9b25f77)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-11/Obsidian-1.0.0-build-11.ipa",
+      "size": 2566450,
       "appPermissions": {}
     }
   ],
