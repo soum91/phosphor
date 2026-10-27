@@ -59,6 +59,10 @@ struct PhosphorShortcuts: AppShortcutsProvider {
     static var shortcutTileColor: ShortcutTileColor = .purple
 
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: ToggleTVIntent(), phrases: [
+            "Toggle TV power in \\(.applicationName)",
+            "Switch my TV with \\(.applicationName)",
+        ], shortTitle: "TV Switch", systemImageName: "power")
         AppShortcut(intent: TVOffIntent(), phrases: [
             "TV off in \(.applicationName)",
             "Turn off the TV in \(.applicationName)",
