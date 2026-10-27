@@ -217,6 +217,11 @@ struct ShortcutQuery: EntityStringQuery {
 private func reload() { WidgetCenter.shared.reloadAllTimelines() }
 
 struct TVPowerIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Set TV Power"
     static var description = IntentDescription("Turns the Sony TV on or off, over Wi-Fi or through the IR blaster.")
 
@@ -237,6 +242,11 @@ struct TVPowerIntent: AppIntent {
 }
 
 struct TVOffIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Turn TV Off"
     static var description = IntentDescription("Turns the Sony TV off.")
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -248,6 +258,11 @@ struct TVOffIntent: AppIntent {
 }
 
 struct TVOnIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Turn TV On"
     static var description = IntentDescription("Turns the Sony TV on.")
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -258,6 +273,11 @@ struct TVOnIntent: AppIntent {
 }
 
 struct ToggleTVIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Toggle TV Power"
     static var description = IntentDescription("Turns the TV on if it's off, off if it's on.")
     func perform() async throws -> some IntentResult {
@@ -274,6 +294,11 @@ struct ToggleTVIntent: AppIntent {
 }
 
 struct VolumeUpIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "TV Volume Up"
     static var description = IntentDescription("Turns the TV up by a few steps.")
 
@@ -293,6 +318,11 @@ struct VolumeUpIntent: AppIntent {
 }
 
 struct VolumeDownIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "TV Volume Down"
     static var description = IntentDescription("Turns the TV down by a few steps.")
 
@@ -312,6 +342,11 @@ struct VolumeDownIntent: AppIntent {
 }
 
 struct SetVolumeIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Set TV Volume"
     static var description = IntentDescription("Sets the TV to an exact volume (needs the TV on Wi-Fi).")
 
@@ -328,6 +363,11 @@ struct SetVolumeIntent: AppIntent {
 }
 
 struct MuteIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Mute TV"
     static var description = IntentDescription("Mutes or unmutes the TV.")
     func perform() async throws -> some IntentResult {
@@ -338,6 +378,11 @@ struct MuteIntent: AppIntent {
 }
 
 struct SetInputIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Set TV Input"
     static var description = IntentDescription("Switches the TV to an HDMI input.")
 
@@ -357,6 +402,11 @@ struct SetInputIntent: AppIntent {
 }
 
 struct LaunchAppIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Open TV App"
     static var description = IntentDescription("Opens an app on the TV (Netflix, YouTube…), turning the TV on first if needed.")
 
@@ -376,6 +426,11 @@ struct LaunchAppIntent: AppIntent {
 }
 
 struct RunPresetIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Run TV Preset"
     static var description = IntentDescription("Runs one of your Obsidian presets.")
 
@@ -399,6 +454,11 @@ struct RunPresetIntent: AppIntent {
 }
 
 struct PressButtonIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Press TV Button"
     static var description = IntentDescription("Presses any button on the Bravia remote: Home, Back, the d-pad, play, pause, inputs and more.")
 
@@ -425,6 +485,11 @@ struct PressButtonIntent: AppIntent {
 }
 
 struct ScreenIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Set TV Screen"
     static var description = IntentDescription("Turns the picture off while the TV keeps playing (great for music), or back on.")
 
@@ -444,6 +509,11 @@ struct ScreenIntent: AppIntent {
 }
 
 struct ToggleScreenIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Toggle TV Screen"
     static var description = IntentDescription("Turns the picture off, or back on, without stopping what's playing.")
     func perform() async throws -> some IntentResult {
@@ -454,6 +524,11 @@ struct ToggleScreenIntent: AppIntent {
 }
 
 struct TypeTextIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Type on TV"
     static var description = IntentDescription("Types text into the search or text box that's open on the TV.")
 
@@ -469,6 +544,11 @@ struct TypeTextIntent: AppIntent {
 }
 
 struct GetTVPowerIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Is the TV On"
     static var description = IntentDescription("Asks the TV over Wi-Fi whether it's on. Returns true or false.")
 
@@ -482,6 +562,11 @@ struct GetTVPowerIntent: AppIntent {
 
 /// One tap, anything: used by the one-button widget.
 struct DoActionIntent: AppIntent {
+    #if WIDGET_EXTENSION
+    // The widget extension cannot be launched to run intents on this iOS, so
+    // Shortcuts must only see (and run) the copy inside the app.
+    static let isDiscoverable = false
+    #endif
     static var title: LocalizedStringResource = "Do TV Action"
     static var description = IntentDescription("Runs a button, app, input, preset or power action on the TV.")
 
