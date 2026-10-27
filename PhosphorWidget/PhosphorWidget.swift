@@ -5,16 +5,18 @@ import AppIntents
 @main
 struct PhosphorWidgets: WidgetBundle {
     var body: some Widget {
-        TVHomeControl()
-
+        PhosphorLockWidget()
         TVWidget()
         ButtonWidget()
-        TVPowerControl()
-        TVMuteControl()
-        TVScreenControl()
-        VolumeUpControl()
-        VolumeDownControl()
-        ActionControl()
+        if #available(iOS 18.0, *) {
+            TVHomeControl()
+            TVPowerControl()
+            TVMuteControl()
+            TVScreenControl()
+            VolumeUpControl()
+            VolumeDownControl()
+            ActionControl()
+        }
     }
 }
 
