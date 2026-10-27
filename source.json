@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.13",
+          "buildVersion": "13",
+          "date": "2026-10-27T01:48:11Z",
+          "localizedDescription": "- Add a read-only Lock Screen status widget (087e53e)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-13/Obsidian-1.0.0-build-13.ipa",
+          "size": 2582764,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.12",
           "buildVersion": "12",
           "date": "2026-10-27T01:40:15Z",
@@ -119,11 +128,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.12",
-      "versionDate": "2026-10-27T01:40:15Z",
-      "versionDescription": "- Run Shortcuts actions in the app instead of the widget extension (c2f0917)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-12/Obsidian-1.0.0-build-12.ipa",
-      "size": 2566605,
+      "version": "1.0.0.13",
+      "versionDate": "2026-10-27T01:48:11Z",
+      "versionDescription": "- Add a read-only Lock Screen status widget (087e53e)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-13/Obsidian-1.0.0-build-13.ipa",
+      "size": 2582764,
       "appPermissions": {}
     }
   ],
