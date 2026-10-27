@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.0.15",
+          "buildVersion": "15",
+          "date": "2026-10-27T04:49:22Z",
+          "localizedDescription": "- Fix App Shortcut utterances for Siri and Control Center (8f34f54)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-15/Obsidian-1.0.0-build-15.ipa",
+          "size": 2584413,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.14",
           "buildVersion": "14",
           "date": "2026-10-27T04:43:03Z",
@@ -137,11 +146,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.14",
-      "versionDate": "2026-10-27T04:43:03Z",
-      "versionDescription": "- Expose one-tap TV power Shortcut for Control Center (165da8a)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-14/Obsidian-1.0.0-build-14.ipa",
-      "size": 2572439,
+      "version": "1.0.0.15",
+      "versionDate": "2026-10-27T04:49:22Z",
+      "versionDescription": "- Fix App Shortcut utterances for Siri and Control Center (8f34f54)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-15/Obsidian-1.0.0-build-15.ipa",
+      "size": 2584413,
       "appPermissions": {}
     }
   ],
