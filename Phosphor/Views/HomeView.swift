@@ -4,6 +4,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var store: Store
     @State private var tab = 0
+    @State private var livePairingVersion = 0
 
     var body: some View {
         TabView(selection: $tab) {
@@ -16,6 +17,27 @@ struct RootView: View {
             NavigationStack { MouseView() }
                 .tabItem { Label("Mouse", systemImage: "cursorarrow.rays") }
                 .tag(2)
+            NavigationStack { LiveView(pairingVersion: livePairingVersion) }
+                .tabItem { Label("Live", systemImage: "video.fill") }
+                .tag(3)
+        }
+        .onOpenURL { url in
+            guard url.scheme?.lowercased() == "phosphor", url.host == "live",
+                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let host = components.queryItems?.first(where: { $0.name == "host" })?.value,
+                  let value = components.queryItems?.first(where: { $0.name == "key" })?.value,
+                  let secret = LiveViewSecret.decode(value), LiveViewSecret.isLocalIPv4(host) else { return }
+            guard let device = store.directory.devices.first(where: { $0.config.host == host }) else {
+                store.show("Add the TV at \(host) to Obsidian first, then scan the companion QR again.")
+                return
+            }
+            guard LiveViewSecret.save(secret, host: host) else {
+                store.show("Couldn't save the TV companion pairing in Keychain.")
+                return
+            }
+            store.selectTV(device.id)
+            livePairingVersion += 1
+            tab = 3
         }
         .sheet(item: Binding(get: { store.learning }, set: { if $0 == nil { store.endLearn() } })) { _ in
             LearnSheet().environmentObject(store).presentationDetents([.medium])
