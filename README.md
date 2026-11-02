@@ -1,6 +1,16 @@
 # Obsidian
 
-An iOS remote for a Sony Bravia OLED (built against the A80L on Google TV). The repo is still called phosphor; the app is Obsidian. It talks to the TV straight over your Wi-Fi with Sony's IP control (the same API the Sony apps, Home Assistant and Afterglow use) and falls back to a Tuya IR blaster when the TV's network side is asleep or not answering. No Sony or Google account.
+Obsidian is an iOS remote for multiple Sony BRAVIA and Android / Google TVs. The repo is still called phosphor. Sony A80L support uses its existing Sony IP control and Tuya IR fallback; generic Android / Google TVs (including TCL) use the paired Android TV Remote Service v2 protocol. No Sony or Google account.
+
+## Multiple TVs and Android TV Remote
+
+- Tap the TV name at the top of Home to switch targets or add another TV. Each TV has its own state, apps, button layout, presets and connection details. An existing single Sony TV is migrated into the list on first launch, leaving the original settings intact.
+- For a Sony TV, choose **Sony BRAVIA**, enter its IP and Sony pre-shared key as before.
+- For TCL and other compatible Google / Android TVs, select the discovered TV (or enter an IP), choose **Android / Google TV**, tap **Pair**, then enter the six-character code displayed on the TV. This uses encrypted Android TV Remote v2 over ports 6467 for pairing and 6466 for control, without ADB or a TV companion app.
+- Common navigation, media, power, volume, input and keyboard controls use the generic protocol. ADB remains optional for listing/launching sideloaded apps and the HID mouse. Sony-specific picture/sound APIs and Sony IR codes are not sent to Android TVs. Some device-dependent features (exact volume, deep-sleep wake, picture-off) may be unavailable.
+- The active TV continues to be reflected in the existing widget and Shortcuts App Group files, maintaining compatibility with the previous release and signing workflow.
+
+Android TV protocol transport is provided by [AndroidTVRemoteControl](https://github.com/odyshewroman/AndroidTVRemoteControl), copyright 2023 Roman Odyshew, used under the MIT license. Source and license are included through Swift Package Manager.
 
 ## Features
 

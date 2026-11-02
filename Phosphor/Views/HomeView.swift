@@ -157,7 +157,7 @@ struct HomeView: View {
         switch s.power {
         case true?: parts.append(s.screenOff == true ? "Screen off" : "On")
         case false?: parts.append("Standby")
-        default: parts.append(store.tv.hasWiFi ? "Not answering" : "IR only")
+        default: parts.append(store.tv.kind == .android ? "Android TV remote" : (store.tv.hasWiFi ? "Not answering" : "IR only"))
         }
         if s.power == true, let i = s.input { parts.append(i) }
         if let v = store.lastPath?.rawValue ?? s.via { parts.append("via \(v)") }
@@ -167,10 +167,26 @@ struct HomeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(store.tv.name.isEmpty ? "Obsidian" : store.tv.name)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                Menu {
+                    ForEach(store.directory.devices) { device in
+                        Button {
+                            store.selectTV(device.id)
+                        } label: {
+                            Label(device.config.name, systemImage: device.id == store.activeProfileID ? "checkmark.tv" : "tv")
+                        }
+                    }
+                    Divider()
+                    Button { showSetup = true } label: { Label("Add another TV", systemImage: "plus.circle") }
+                } label: {
+                    HStack(spacing: 7) {
+                        Text(store.tv.name.isEmpty ? "Obsidian" : store.tv.name)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                        Image(systemName: "chevron.down.circle.fill")
+                            .font(.system(size: 17)).foregroundStyle(Theme.accent)
+                    }
+                    .foregroundStyle(.white)
+                }
                 if store.isSetUp {
                     HStack(spacing: 6) {
                         Circle().fill(isOn ? Theme.accent : Theme.off).frame(width: 8, height: 8)
@@ -203,7 +219,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             Image(systemName: "tv.and.mediabox.fill").font(.system(size: 34)).foregroundStyle(Theme.accent)
             Text("Let's find your TV").font(.title2.bold())
-            Text("Obsidian talks to the Bravia straight over your Wi-Fi (Sony's IP control) and through your Tuya IR blaster when the TV is asleep or its network side isn't answering. No Sony or Google account.")
+            Text("Control a Sony BRAVIA or pair a Google / Android TV such as TCL over your home Wi-Fi. Sony's existing IR fallback is preserved.")
                 .foregroundStyle(.secondary)
             Button { showSetup = true } label: {
                 Text("Set up").fontWeight(.semibold)
@@ -246,8 +262,10 @@ struct HomeView: View {
                 .contextMenu {
                     Button { store.perform(.power(true)) } label: { Label("Power on", systemImage: "power.circle.fill") }
                     Button { store.perform(.power(false)) } label: { Label("Power off", systemImage: "power.circle") }
-                    Button { store.testIR("WakeUp") } label: { Label("Power on over IR", systemImage: "dot.radiowaves.right") }
-                    Button { store.testIR("PowerOff") } label: { Label("Power off over IR", systemImage: "dot.radiowaves.right") }
+                    if store.tv.kind == .sony {
+                        Button { store.testIR("WakeUp") } label: { Label("Power on over IR", systemImage: "dot.radiowaves.right") }
+                        Button { store.testIR("PowerOff") } label: { Label("Power off over IR", systemImage: "dot.radiowaves.right") }
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -271,12 +289,13 @@ struct HomeView: View {
 
             HStack(spacing: 12) {
                 stepButton("minus") { store.perform(.volumeDown(1)) }
-                if store.tv.hasWiFi && store.tv.route != .ir {
+                if store.tv.kind == .sony && store.tv.hasWiFi && store.tv.route != .ir {
                     Slider(value: Binding(get: { min(store.volumeDraft ?? volumeValue, maxVolume) }, set: { store.setVolumeLive($0) }),
                            in: 0...maxVolume, step: 1)
                         .tint(Theme.accent)
                 } else {
-                    Text("IR: hold to repeat").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    Text(store.tv.kind == .android ? "Android TV remote" : "IR: hold to repeat")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }
                 stepButton("plus") { store.perform(.volumeUp(1)) }
             }
@@ -299,10 +318,12 @@ struct HomeView: View {
     private var quickRow: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 5), spacing: 14) {
             ForEach(store.home.quick, id: \.self) { id in
-                quickButton(id)
-                    .editable(editMode, id: "q:" + id,
-                              onRemove: { withAnimation { store.home.quick.removeAll { $0 == id } } },
-                              onDrop: { d in moveQuick(d, before: id) })
+                if store.tv.kind == .sony || id != "screen" {
+                    quickButton(id)
+                        .editable(editMode, id: "q:" + id,
+                                  onRemove: { withAnimation { store.home.quick.removeAll { $0 == id } } },
+                                  onDrop: { d in moveQuick(d, before: id) })
+                }
             }
             if editMode && store.home.quick.count < HomeLayout.maxQuick {
                 AddTile(size: 52) { addingQuick = true }
@@ -528,13 +549,15 @@ struct HomeView: View {
 
     private var moreCard: some View {
         VStack(spacing: 0) {
-            ForEach(Bravia.settingGroups, id: \.title) { g in
-                NavigationLink { SettingsGroupView(group: g) } label: {
-                    row(g.title, g.title == "Picture" ? "sparkles.tv" : (g.title == "Sound" ? "waveform" : "hifispeaker.2"),
-                        g.title == "Picture" ? "Picture mode, brightness, color, motion…" : (g.title == "Sound" ? "Sound mode, output, surround…" : "Speaker and sound bar options"))
+            if store.tv.kind == .sony {
+                ForEach(Bravia.settingGroups, id: \.title) { g in
+                    NavigationLink { SettingsGroupView(group: g) } label: {
+                        row(g.title, g.title == "Picture" ? "sparkles.tv" : (g.title == "Sound" ? "waveform" : "hifispeaker.2"),
+                            g.title == "Picture" ? "Picture mode, brightness, color, motion…" : (g.title == "Sound" ? "Sound mode, output, surround…" : "Speaker and sound bar options"))
+                    }
+                    .disabled(!store.tv.hasWiFi)
+                    Divider().overlay(Theme.stroke)
                 }
-                .disabled(!store.tv.hasWiFi)
-                Divider().overlay(Theme.stroke)
             }
             NavigationLink { RemoteView() } label: { row("Remote", "av.remote.fill", "Every button, learn mode") }
         }
@@ -733,9 +756,11 @@ struct RouteMenu: View {
     var body: some View {
         Button { store.press(key, via: .wifi) } label: { Label("Send over Wi-Fi", systemImage: "wifi") }
             .disabled(!store.tv.hasWiFi)
-        Button { store.press(key, via: .ir) } label: { Label("Send over IR", systemImage: "dot.radiowaves.right") }
-            .disabled(!store.blaster.isReady)
-        if store.blaster.isReady {
+        if store.tv.kind == .sony {
+            Button { store.press(key, via: .ir) } label: { Label("Send over IR", systemImage: "dot.radiowaves.right") }
+                .disabled(!store.blaster.isReady)
+        }
+        if store.tv.kind == .sony && store.blaster.isReady {
             Button { store.startLearn(key) } label: { Label("Learn from remote", systemImage: "record.circle") }
         }
         if store.codes[key] != nil {

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths-ignore: ["**.md"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**.md"]
   workflow_dispatch:
 
 permissions:
@@ -33,7 +36,7 @@ jobs:
 
       - name: Build
         run: |
-          set -o pipefail
+          set +e
           xcodebuild \
             -project Phosphor.xcodeproj \
             -scheme Phosphor \
@@ -43,11 +46,15 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             CURRENT_PROJECT_VERSION=$BUILD \
-            build | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Release-iphoneos/Phosphor.app
+            build > build.log 2>&1
+          result=$?
+          set -e
+          grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" build.log || true
+          test "$result" -eq 0
+          test -f build/Build/Products/Release-iphoneos/Phosphor.app/Info.plist
 
       - name: Publish build log
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           git config user.name "ci"
           git config user.email "ci@users.noreply.github.com"
@@ -94,6 +101,7 @@ jobs:
           path: ${{ env.IPA }}
 
       - name: Publish release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
@@ -104,6 +112,7 @@ jobs:
           make_latest: true
 
       - name: Update sideloading source (FlareStore / AltStore / SideStore)
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name "ci"
           git config user.email "ci@users.noreply.github.com"

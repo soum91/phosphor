@@ -23,6 +23,12 @@ enum TVRoute: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum TVKind: String, Codable, CaseIterable {
+    case sony
+    case android
+    var title: String { self == .sony ? "Sony BRAVIA" : "Android / Google TV" }
+}
+
 struct TVConfig: Codable, Equatable {
     var host: String = ""
     var psk: String = ""
@@ -30,6 +36,21 @@ struct TVConfig: Codable, Equatable {
     var model: String?
     var mac: String?
     var route: TVRoute = .auto
+    var kind: TVKind = .sony
+
+    // Old installations have no `kind` field. Preserve the existing BRAVIA setup.
+    enum CodingKeys: String, CodingKey { case host, psk, name, model, mac, route, kind }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
+        psk = try c.decodeIfPresent(String.self, forKey: .psk) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Sony TV"
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        mac = try c.decodeIfPresent(String.self, forKey: .mac)
+        route = try c.decodeIfPresent(TVRoute.self, forKey: .route) ?? .auto
+        kind = try c.decodeIfPresent(TVKind.self, forKey: .kind) ?? .sony
+    }
 
     var hasWiFi: Bool { !host.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -152,13 +173,19 @@ enum Apps {
 enum TV {
     @discardableResult
     static func perform(_ action: TVAction, cfg: TVConfig = .stored) async throws -> TVPath {
+        if cfg.kind == .android {
+            guard cfg.hasWiFi else { throw AppError("Pair your Android TV in Obsidian first.") }
+            try await AndroidTVTransport.shared.send(action, host: cfg.host, known: TVState.stored)
+            note(action, .wifi, cfg: cfg)
+            return .wifi
+        }
         var wifiError: Error?
         // Waking from standby: don't sit on a TV whose network is asleep, the blaster can do it.
         let timeout: Double = action == .power(true) ? 2.5 : 4
         if cfg.route != .ir, let b = Bravia(cfg, timeout: timeout) {
             do {
                 try await wifi(action, b)
-                note(action, .wifi)
+                note(action, .wifi, cfg: cfg)
                 return .wifi
             } catch {
                 wifiError = error
@@ -174,7 +201,7 @@ enum TV {
                 try await IRSender.shared.send(code)
                 if i < keys.count - 1 { try? await Task.sleep(nanoseconds: 160_000_000) }
             }
-            note(action, .ir)
+            note(action, .ir, cfg: cfg)
             return .ir
         }
         if let wifiError { throw wifiError }
@@ -283,7 +310,8 @@ enum TV {
         }
     }
 
-    private static func note(_ a: TVAction, _ path: TVPath) {
+    private static func note(_ a: TVAction, _ path: TVPath, cfg: TVConfig) {
+        guard TVConfig.stored.host == cfg.host, TVConfig.stored.kind == cfg.kind else { return }
         var s = TVState.stored
         switch a {
         case .power(let on):
@@ -321,6 +349,16 @@ enum TV {
     @discardableResult
     static func refresh(cfg: TVConfig = .stored) async -> TVState {
         var s = TVState.stored
+        if cfg.kind == .android {
+            // Unlike Sony JSON-RPC, v2 doesn't provide a synchronous status poll.
+            // Never mark a sleeping Android TV as off just because it is unreachable.
+            if await AndroidTVTransport.shared.connected(host: cfg.host) {
+                s.via = TVPath.wifi.rawValue
+                s.updated = .now
+            }
+            if TVConfig.stored == cfg { TVState.stored = s }
+            return s
+        }
         guard let b = Bravia(cfg, timeout: 3) else { return s }
         do {
             s.power = try await b.power()
@@ -351,7 +389,7 @@ enum TV {
                 s.updated = .now
             }
         }
-        TVState.stored = s
+        if TVConfig.stored == cfg { TVState.stored = s }
         return s
     }
 
@@ -512,20 +550,20 @@ enum PresetStore {
 }
 
 enum Presets {
-    static func run(_ p: TVPreset) async throws {
+    static func run(_ p: TVPreset, cfg: TVConfig = .stored) async throws {
         guard p.powerOn else {
-            try await TV.perform(.power(false))
+            try await TV.perform(.power(false), cfg: cfg)
             return
         }
         let wasOff = TVState.stored.power != true
-        try await TV.perform(.power(true))
+        try await TV.perform(.power(true), cfg: cfg)
         // Google TV takes a few seconds to take commands after waking.
         if wasOff { try? await Task.sleep(nanoseconds: 4_000_000_000) }
         var failures: [String] = []
         var steps = 0
         func step(_ a: TVAction) async {
             steps += 1
-            do { try await TV.perform(a) } catch { failures.append(error.localizedDescription) }
+            do { try await TV.perform(a, cfg: cfg) } catch { failures.append(error.localizedDescription) }
         }
         if let input = p.input { await step(.input(input)) }
         if let app = p.app { await step(.app(app)) }
