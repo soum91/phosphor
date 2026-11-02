@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.1.0.18",
+          "buildVersion": "18",
+          "date": "2026-11-02T02:44:20Z",
+          "localizedDescription": "- Obsidian 1.1: multi-TV profiles and Android TV Remote v2 (0376d44)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-18/Obsidian-1.1.0-build-18.ipa",
+          "size": 2897361,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.0.0.15",
           "buildVersion": "15",
           "date": "2026-10-27T04:49:22Z",
@@ -146,11 +155,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.0.0.15",
-      "versionDate": "2026-10-27T04:49:22Z",
-      "versionDescription": "- Fix App Shortcut utterances for Siri and Control Center (8f34f54)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-15/Obsidian-1.0.0-build-15.ipa",
-      "size": 2584413,
+      "version": "1.1.0.18",
+      "versionDate": "2026-11-02T02:44:20Z",
+      "versionDescription": "- Obsidian 1.1: multi-TV profiles and Android TV Remote v2 (0376d44)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-18/Obsidian-1.1.0-build-18.ipa",
+      "size": 2897361,
       "appPermissions": {}
     }
   ],
