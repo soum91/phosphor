@@ -24,7 +24,9 @@ jobs:
       - name: Install Android platform
         run: |
           echo "Android SDK: $ANDROID_HOME"
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          sdkmanager_path=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)
+          test -n "$sdkmanager_path"
+          "$sdkmanager_path" --install 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
