@@ -15,7 +15,7 @@ struct TVProfile: Codable, Identifiable {
     var remoteLayout: RemoteLayout
     var homeLayout: HomeLayout
 
-    static func current(id: String, store: Store) -> TVProfile {
+    @MainActor static func current(id: String, store: Store) -> TVProfile {
         TVProfile(id: id, config: store.tv, state: store.state, inputs: store.inputs,
                   apps: store.apps, remote: store.remote, learnedCodes: store.codes, sideApps: store.sideApps,
                   presets: store.presets, remoteLayout: store.layout, homeLayout: store.home)

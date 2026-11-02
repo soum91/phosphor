@@ -36,7 +36,7 @@ jobs:
 
       - name: Build
         run: |
-          set -o pipefail
+          set +e
           xcodebuild \
             -project Phosphor.xcodeproj \
             -scheme Phosphor \
@@ -46,8 +46,12 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             CURRENT_PROJECT_VERSION=$BUILD \
-            build | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Release-iphoneos/Phosphor.app
+            build > build.log 2>&1
+          result=$?
+          set -e
+          grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" build.log || true
+          test "$result" -eq 0
+          test -f build/Build/Products/Release-iphoneos/Phosphor.app/Info.plist
 
       - name: Publish build log
         if: always() && github.event_name != 'pull_request'
