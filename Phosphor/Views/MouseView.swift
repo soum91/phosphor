@@ -46,6 +46,10 @@ struct MouseView: View {
         .sheet(isPresented: $showSettings) { MouseSettings(link: link).presentationDetents([.medium, .large]) }
         .onAppear { link.start(host: store.tv.host) }
         .onDisappear { link.stop() }
+        .onChange(of: store.tv.host) { _, next in
+            link.stop()
+            if !next.isEmpty { link.start(host: next) }
+        }
         .onChange(of: phase) { _, p in
             if p == .active { link.start(host: store.tv.host) } else if p == .background { link.stop() }
         }

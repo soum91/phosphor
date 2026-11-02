@@ -34,9 +34,18 @@ struct LearnSession: Identifiable, Equatable {
 @MainActor
 final class Store: ObservableObject {
     static let shared = Store()
+    @Published private(set) var directory = TVDirectory.load()
+    private var changingTV = false
 
     // TV
-    @Published var tv = TVConfig.stored { didSet { if tv != oldValue { TVConfig.stored = tv } } }
+    @Published var tv = TVConfig.stored {
+        didSet {
+            if tv != oldValue {
+                TVConfig.stored = tv
+                if !changingTV { saveActiveProfile() }
+            }
+        }
+    }
     @Published var state = TVState.stored
     @Published var inputs = InputCache.load()
     @Published var apps = AppCache.load()
@@ -106,11 +115,79 @@ final class Store: ObservableObject {
 
     var isSetUp: Bool { tv.hasWiFi || blaster.isReady }
 
+    var activeProfileID: String? { directory.selected }
+
+    private func saveActiveProfile() {
+        guard !changingTV, let id = directory.selected,
+              let index = directory.devices.firstIndex(where: { $0.id == id }) else { return }
+        directory.devices[index] = TVProfile.current(id: id, store: self)
+        TVDirectory.save(directory)
+    }
+
+    func selectTV(_ id: String, saveCurrent: Bool = true) {
+        guard let item = directory.devices.first(where: { $0.id == id }) else { return }
+        if directory.selected == id, tv == item.config { return }
+        if saveCurrent { saveActiveProfile() }
+        stopPolling()
+        changingTV = true
+        directory.selected = id
+        item.activate()
+        tv = item.config
+        state = item.state
+        inputs = item.inputs
+        apps = item.apps
+        remote = item.remote
+        codes = item.learnedCodes
+        sideApps = item.sideApps
+        presets = item.presets
+        layout = item.remoteLayout
+        home = item.homeLayout
+        wifiReachable = nil
+        authFailed = false
+        lastPath = nil
+        changingTV = false
+        TVDirectory.save(directory)
+        WidgetCenter.shared.reloadAllTimelines()
+        startPolling()
+        updateVolumeButtons(active: true)
+    }
+
+    private func registerTV(_ config: TVConfig) {
+        saveActiveProfile()
+        let existing = directory.devices.firstIndex(where: { $0.config.host == config.host && $0.config.kind == config.kind })
+        let id: String
+        if let existing {
+            id = directory.devices[existing].id
+            directory.devices[existing].config = config
+        } else {
+            let item = TVProfile.initial(config: config)
+            id = item.id
+            directory.devices.append(item)
+        }
+        // Do not preselect: selectTV must first save the old target and restore the new snapshot.
+        TVDirectory.save(directory)
+        selectTV(id, saveCurrent: false)
+    }
+
+    func addAndroidTV(host: String, name: String, model: String?) {
+        var config = TVConfig()
+        config.host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.name = name.isEmpty ? "Android TV" : name
+        config.model = model
+        config.kind = .android
+        config.route = .wifi
+        registerTV(config)
+    }
+
     // MARK: - Polling
 
     func startPolling() {
         poller?.cancel()
         if tv.hasWiFi { cast.connect(host: tv.host) }
+        if tv.kind == .android, tv.hasWiFi {
+            let host = tv.host
+            Task { try? await AndroidTVTransport.shared.connect(host: host) }
+        }
         poller = Task {
             var tick = 0
             while !Task.isCancelled {
@@ -132,8 +209,10 @@ final class Store: ObservableObject {
             state = TVState.stored
             return
         }
+        let config = tv
         let before = state
-        let s = await TV.refresh(cfg: tv)
+        let s = await TV.refresh(cfg: config)
+        guard tv.host == config.host, tv.kind == config.kind else { return }
         if volumeDraft == nil { state = s } else { var t = s; t.volume = state.volume; state = t }
         wifiReachable = s.updated > Date().addingTimeInterval(-10) && s.via == TVPath.wifi.rawValue
         if before.power != s.power || before.volume != s.volume || before.muted != s.muted || before.screenOff != s.screenOff {
@@ -146,11 +225,14 @@ final class Store: ObservableObject {
 
     /// Inputs, apps and the TV's own button list. Kept for the widget, Siri and IR.
     func loadLists() async {
+        guard tv.kind == .sony else { return }
         guard let b = Bravia(tv) else { return }
+        let host = tv.host
         async let i = try? b.inputs()
         async let a = try? b.apps()
         async let r = try? b.remoteCodes()
         let (ins, aps, rem) = await (i, a, r)
+        guard tv.host == host, tv.kind == .sony else { return }
         if let ins, !ins.isEmpty, ins != inputs { inputs = ins; InputCache.save(ins) }
         if let aps, !aps.isEmpty, aps != apps { apps = aps; AppCache.save(aps) }
         if let rem, !rem.isEmpty, rem != remote { remote = rem; RemoteCodes.save(rem) }
@@ -160,14 +242,17 @@ final class Store: ObservableObject {
 
     func perform(_ a: TVAction) {
         haptic.impactOccurred()
+        let config = tv
         Task {
             do {
-                let path = try await TV.perform(a, cfg: tv)
+                let path = try await TV.perform(a, cfg: config)
+                guard tv.host == config.host, tv.kind == config.kind else { return }
                 lastPath = path
                 authFailed = false
                 state = TVState.stored
                 if case .power(let on) = a, on == false { Donate.off() }
             } catch {
+                guard tv.host == config.host, tv.kind == config.kind else { return }
                 if (error as? BraviaError)?.auth == true { authFailed = true }
                 show(error.localizedDescription)
             }
@@ -190,6 +275,7 @@ final class Store: ObservableObject {
             Task {
                 do {
                     try await TV.perform(.key(k), cfg: c)
+                    guard tv.host == c.host, tv.kind == c.kind else { return }
                     lastPath = .wifi
                     state = TVState.stored
                 } catch {
@@ -226,9 +312,11 @@ final class Store: ObservableObject {
     func run(_ p: TVPreset) {
         haptic.impactOccurred()
         show("\(p.name)…")
+        let config = tv
         Task {
             do {
-                try await Presets.run(p)
+                try await Presets.run(p, cfg: config)
+                guard tv.host == config.host, tv.kind == config.kind else { return }
                 Donate.preset(p)
                 show(p.name)
                 await refresh()
@@ -240,13 +328,15 @@ final class Store: ObservableObject {
 
     func open(_ app: BraviaApp) {
         haptic.impactOccurred()
+        let config = tv
         Task {
             do {
                 if state.power != true {
-                    try await TV.perform(.power(true), cfg: tv)
+                    try await TV.perform(.power(true), cfg: config)
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                 }
-                try await TV.perform(.app(app.uri), cfg: tv)
+                try await TV.perform(.app(app.uri), cfg: config)
+                guard tv.host == config.host, tv.kind == config.kind else { return }
                 state = TVState.stored
             } catch {
                 show(error.localizedDescription)
@@ -265,14 +355,16 @@ final class Store: ObservableObject {
     /// Asks the TV for its third-party apps. The first time, the TV asks you to allow debugging.
     func loadSideApps() async {
         guard tv.hasWiFi else { adbMessage = "Set up the TV on Wi-Fi first."; return }
+        let host = tv.host
         adbBusy = true
         adbMessage = "Connecting… if the TV asks \"Allow USB debugging?\", tick Always allow and press Allow."
         defer { adbBusy = false }
-        let adb = ADB(host: tv.host)
+        let adb = ADB(host: host)
         defer { Task { await adb.close() } }
         do {
             try await adb.connect(approvalWait: 60)
             let listing = try await SideApps.list(adb)
+            guard tv.host == host else { return }
             var next: [SideApp] = []
             // Every third-party app the Sony list doesn't already show, plus anything you added by hand.
             for p in listing.third where !sonyListed(p) {
@@ -285,7 +377,8 @@ final class Store: ObservableObject {
             }
             next.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             sideApps = next
-            await readNames(adb, next.filter { $0.label == nil || $0.hasIcon != true || $0.iconRev != 2 }.map(\.package))
+            await readNames(adb, next.filter { $0.label == nil || $0.hasIcon != true || $0.iconRev != 2 }.map(\.package), host: host)
+            guard tv.host == host else { return }
             sideApps.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             adbMessage = sideApps.isEmpty ? "Connected. No sideloaded apps on the TV." : "\(sideApps.count) app\(sideApps.count == 1 ? "" : "s")."
         } catch {
@@ -294,13 +387,15 @@ final class Store: ObservableObject {
     }
 
     /// Real names and icons, straight from each APK. The list updates as each one comes in.
-    private func readNames(_ adb: ADB, _ pkgs: [String]) async {
+    private func readNames(_ adb: ADB, _ pkgs: [String], host: String) async {
         for (n, pkg) in pkgs.enumerated() {
+            guard tv.host == host else { return }
             adbMessage = "Reading names and icons \(n + 1) of \(pkgs.count)…"
             // Google Play first: official, full-square, high-res. Then the APK itself (adaptive layers, bitmaps, vectors).
             async let play = PlayStore.lookup(pkg)
             let apk = try? await APKInfo.read(adb, package: pkg)
             let p = await play
+            guard tv.host == host else { return }
             guard let i = sideApps.firstIndex(where: { $0.package == pkg }) else { continue }
             var a = sideApps[i]
             if let l = apk?.label ?? p.title { a.label = l }
@@ -326,6 +421,7 @@ final class Store: ObservableObject {
 
     /// Adds any app by hand (system apps too) and reads its name and icon.
     func addSideApp(_ pkg: String) {
+        let host = tv.host
         if let i = sideApps.firstIndex(where: { $0.package == pkg }) {
             sideApps[i].pinned = true
         } else {
@@ -333,23 +429,25 @@ final class Store: ObservableObject {
         }
         home.hiddenApps.removeAll { $0 == "side:" + pkg }
         Task {
-            let adb = ADB(host: tv.host)
+            let adb = ADB(host: host)
             defer { Task { await adb.close() } }
             guard (try? await adb.connect()) != nil else { return }
-            await readNames(adb, [pkg])
+            await readNames(adb, [pkg], host: host)
             adbMessage = nil
         }
     }
 
     func open(_ side: SideApp) {
         haptic.impactOccurred()
+        let config = tv
         Task {
             do {
                 if state.power != true {
-                    try await TV.perform(.power(true), cfg: tv)
+                    try await TV.perform(.power(true), cfg: config)
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                 }
-                try await TV.perform(.app("side:" + side.package), cfg: tv)
+                try await TV.perform(.app("side:" + side.package), cfg: config)
+                guard tv.host == config.host, tv.kind == config.kind else { return }
                 state = TVState.stored
             } catch {
                 show(error.localizedDescription)
@@ -397,7 +495,8 @@ final class Store: ObservableObject {
             t.mac = info.mac
             if t.name == TVConfig().name, let m = t.model { t.name = "Bravia \(m.replacingOccurrences(of: "XR-", with: "").replacingOccurrences(of: "KD-", with: ""))" }
         }
-        tv = t
+        t.kind = .sony
+        registerTV(t)
         authFailed = false
         cast.disconnect()
         cast.connect(host: h)
@@ -408,13 +507,30 @@ final class Store: ObservableObject {
 
     func forgetTV() {
         cast.disconnect()
+        if let selected = directory.selected {
+            directory.devices.removeAll { $0.id == selected }
+            directory.selected = nil
+            TVDirectory.save(directory)
+            if let next = directory.devices.first {
+                selectTV(next.id)
+                return
+            }
+        }
+        changingTV = true
         var t = TVConfig()
         t.route = blaster.isReady ? .ir : .auto
         tv = t
         inputs = []; apps = []; remote = [:]
         InputCache.save([]); AppCache.save([]); RemoteCodes.save([:])
+        codes = [:]; LearnedCodes.save([:])
         state = TVState()
         TVState.stored = state
+        sideApps = []; SideAppStore.save([])
+        presets = TVPreset.defaults; PresetStore.save(presets)
+        layout = .standard; RemoteLayout.stored = layout
+        home = HomeLayout(); HomeLayout.stored = home
+        changingTV = false
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: - Smart Life (once, for the blaster's local key)
@@ -690,6 +806,7 @@ final class Store: ObservableObject {
     }
 
     func testIR(_ keyID: String) {
+        guard tv.kind == .sony else { show("TCL IR codes haven't been learned. Use the paired Android TV remote over Wi-Fi."); return }
         guard let code = Keys.ir(keyID, learned: codes, remote: remote) else { show("No IR code for that button yet."); return }
         haptic.impactOccurred()
         Task {

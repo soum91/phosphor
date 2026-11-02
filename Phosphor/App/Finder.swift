@@ -9,6 +9,7 @@ struct FoundTV: Identifiable, Equatable {
     var model: String?
     /// True once it answered Sony's IP control.
     var isBravia = false
+    var supportsAndroidRemote = false
 }
 
 /// Finds the TV by its Google Cast and Android TV Bonjour services, then checks which ones speak Sony IP control.
@@ -17,13 +18,11 @@ final class TVFinder: ObservableObject {
     @Published var found: [FoundTV] = []
     @Published var searching = false
     private var browsers: [NWBrowser] = []
-    private var seen: Set<String> = []
 
     func start() {
         stop()
         searching = true
         found = []
-        seen = []
         for type in ["_googlecast._tcp", "_androidtvremote2._tcp"] {
             let b = NWBrowser(for: .bonjourWithTXTRecord(type: type, domain: nil), using: .tcp)
             b.browseResultsChangedHandler = { [weak self] results, _ in
@@ -35,7 +34,7 @@ final class TVFinder: ObservableObject {
                         if let md = txt["md"], !md.isEmpty { model = md }
                     }
                     let f = friendly, m = model
-                    Task { @MainActor in await self?.resolve(r.endpoint, name: f, model: m) }
+                    Task { @MainActor in await self?.resolve(r.endpoint, name: f, model: m, service: type) }
                 }
             }
             b.start(queue: .main)
@@ -53,16 +52,22 @@ final class TVFinder: ObservableObject {
         searching = false
     }
 
-    private func resolve(_ endpoint: NWEndpoint, name: String, model: String?) async {
-        guard let host = await Self.address(of: endpoint), !seen.contains(host) else { return }
-        seen.insert(host)
-        var tv = FoundTV(name: Self.clean(name), host: host, model: model)
-        found.append(tv)
+    private func resolve(_ endpoint: NWEndpoint, name: String, model: String?, service: String) async {
+        guard let host = await Self.address(of: endpoint) else { return }
+        var tv = found.first(where: { $0.host == host }) ?? FoundTV(name: Self.clean(name), host: host, model: model)
+        tv.supportsAndroidRemote = tv.supportsAndroidRemote || service == "_androidtvremote2._tcp"
+        if tv.model == nil { tv.model = model }
+        if !found.contains(where: { $0.host == host }) { found.append(tv) }
         if let info = try? await Bravia(host: host, psk: "", timeout: 3).interfaceInfo() {
             tv.isBravia = true
             if let m = info.model, !m.isEmpty { tv.model = m }
         }
-        if let i = found.firstIndex(where: { $0.host == host }) { found[i] = tv }
+        if let i = found.firstIndex(where: { $0.host == host }) {
+            // Preserve flags discovered by another Bonjour browser concurrently.
+            tv.supportsAndroidRemote = tv.supportsAndroidRemote || found[i].supportsAndroidRemote
+            tv.isBravia = tv.isBravia || found[i].isBravia
+            found[i] = tv
+        }
         // Sony ones first.
         found.sort { ($0.isBravia ? 0 : 1, $0.name) < ($1.isBravia ? 0 : 1, $1.name) }
     }

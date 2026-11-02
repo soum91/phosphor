@@ -59,6 +59,11 @@ struct FindTVView: View {
     @StateObject private var finder = TVFinder()
     @State private var host = ""
     @State private var psk = ""
+    @State private var kind: TVKind = .sony
+    @State private var friendlyName = ""
+    @State private var model: String?
+    @State private var awaitingCode = false
+    @State private var pairingCode = ""
     @State private var busy = false
     @State private var message: String?
 
@@ -75,14 +80,21 @@ struct FindTVView: View {
                         }
                     }
                     ForEach(finder.found) { f in
-                        Button { host = f.host } label: {
+                        Button {
+                            host = f.host
+                            friendlyName = f.name
+                            model = f.model
+                            kind = f.isBravia ? .sony : .android
+                            awaitingCode = false
+                            message = nil
+                        } label: {
                             HStack {
                                 Image(systemName: f.isBravia ? "tv.fill" : "tv")
                                     .foregroundStyle(f.isBravia ? Theme.accent : .secondary)
                                     .frame(width: 26)
                                 VStack(alignment: .leading) {
                                     Text(f.name).foregroundStyle(.white)
-                                    Text([f.model, f.host, f.isBravia ? "Sony IP control" : "Cast only"].compactMap { $0 }.joined(separator: " · "))
+                                    Text([f.model, f.host, f.isBravia ? "Sony IP control" : (f.supportsAndroidRemote ? "Android TV Remote" : "Cast (try pairing)")].compactMap { $0 }.joined(separator: " · "))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -95,33 +107,77 @@ struct FindTVView: View {
                 }
 
                 Section {
+                    Picker("Control protocol", selection: $kind) {
+                        ForEach(TVKind.allCases, id: \.self) { type in Text(type.title).tag(type) }
+                    }
                     TextField("TV IP, e.g. 192.168.1.40", text: $host)
                         .keyboardType(.decimalPad)
                         .textInputAutocapitalization(.never)
-                    SecureField("Pre-shared key", text: $psk)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button {
-                        Task {
-                            busy = true
-                            message = nil
-                            if let err = await store.connectTV(host: host, psk: psk) {
-                                message = err
-                            } else {
-                                message = "Connected to \(store.tv.name)."
-                                try? await Task.sleep(nanoseconds: 700_000_000)
-                                dismiss()
+                    TextField("Name (optional)", text: $friendlyName)
+                    if kind == .sony {
+                        SecureField("Pre-shared key", text: $psk)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button {
+                            Task {
+                                busy = true
+                                message = nil
+                                if let err = await store.connectTV(host: host, psk: psk) {
+                                    message = err
+                                } else {
+                                    if !friendlyName.isEmpty { store.tv.name = friendlyName }
+                                    dismiss()
+                                }
+                                busy = false
                             }
-                            busy = false
+                        } label: {
+                            HStack { Text("Connect Sony TV").fontWeight(.semibold); Spacer(); if busy { ProgressView() } }
                         }
-                    } label: {
-                        HStack { Text("Connect").fontWeight(.semibold); Spacer(); if busy { ProgressView() } }
+                        .disabled(host.isEmpty || busy)
+                    } else if !awaitingCode {
+                        Button {
+                            Task {
+                                busy = true
+                                message = nil
+                                do {
+                                    try await AndroidTVTransport.shared.startPairing(host: host)
+                                    awaitingCode = true
+                                } catch { message = error.localizedDescription }
+                                busy = false
+                            }
+                        } label: {
+                            HStack { Text("Pair Android / Google TV").fontWeight(.semibold); Spacer(); if busy { ProgressView() } }
+                        }
+                        .disabled(host.isEmpty || busy)
+                    } else {
+                        Text("Enter the code now displayed on the TV.")
+                            .font(.callout).foregroundStyle(.secondary)
+                        TextField("Six-character pairing code", text: $pairingCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                        Button {
+                            Task {
+                                busy = true
+                                message = nil
+                                do {
+                                    try await AndroidTVTransport.shared.finishPairing(host: host, code: pairingCode)
+                                    store.addAndroidTV(host: host, name: friendlyName, model: model)
+                                    dismiss()
+                                } catch {
+                                    message = error.localizedDescription
+                                    awaitingCode = false
+                                }
+                                busy = false
+                            }
+                        } label: {
+                            HStack { Text("Finish pairing").fontWeight(.semibold); Spacer(); if busy { ProgressView() } }
+                        }
+                        .disabled(pairingCode.count != 6 || busy)
                     }
-                    .disabled(host.isEmpty || busy)
                 } header: {
-                    Text("Address and key")
+                    Text(kind == .sony ? "Address and key" : "Address and pairing")
                 } footer: {
-                    Text("Same key Afterglow and Subwave use, if you already set one.")
+                    Text(kind == .sony ? "Use the same key as Afterglow and Subwave." : "No Sony key, ADB debugging or Google account required. Confirm the code shown on your TV.")
                 }
 
                 if let message {
@@ -129,22 +185,26 @@ struct FindTVView: View {
                 }
 
                 Section {
-                    Label("Settings › Network & Internet › Home network › IP control › Authentication: **Normal and Pre-Shared Key**, then set a **Pre-Shared Key**.", systemImage: "1.circle")
-                    Label("Same menu: turn **Simple IP control** on if you see it.", systemImage: "2.circle")
-                    Label("Settings › Network & Internet › **Remote start** on, so Wi-Fi can turn the TV on. Without it, power-on goes over IR.", systemImage: "3.circle")
-                    Label("Give the TV a fixed IP in your router.", systemImage: "4.circle")
+                    if kind == .sony {
+                        Label("Settings › Network & Internet › Home network › IP control › Authentication: **Normal and Pre-Shared Key**, then set a **Pre-Shared Key**.", systemImage: "1.circle")
+                        Label("Same menu: turn **Simple IP control** on if you see it.", systemImage: "2.circle")
+                        Label("Settings › Network & Internet › **Remote start** on.", systemImage: "3.circle")
+                    } else {
+                        Label("Leave the TV on and connected to your home network.", systemImage: "1.circle")
+                        Label("Android TV Remote Service must be enabled. The TV should show a code after you tap Pair.", systemImage: "2.circle")
+                        Label("If pairing doesn't appear, check your network isolation and try the TV's current IP.", systemImage: "3.circle")
+                    }
+                    Label("A DHCP reservation in your router keeps the TV's IP stable.", systemImage: "4.circle")
                 } header: {
-                    Text("On the TV (A80L / Google TV)")
+                    Text(kind == .sony ? "On the Sony TV" : "On the Android / Google TV")
                 }
                 .font(.callout)
             }
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Sony TV")
+        .navigationTitle("Add TV")
         .onAppear {
             finder.start()
-            host = store.tv.host
-            psk = store.tv.psk
         }
         .onDisappear { finder.stop() }
     }

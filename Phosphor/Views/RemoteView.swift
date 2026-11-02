@@ -22,7 +22,10 @@ struct RemoteView: View {
                     RemoteFace(tap: tap, editing: editing, onAdd: { addingTo = $0 })
                     if !editing {
                     SectionTitle(text: "Every button")
-                    if learnMode {
+                    if store.tv.kind == .android {
+                        Text("Paired Android TV Remote Service. Common navigation, volume, media and TV buttons work over Wi-Fi; Sony-only options are hidden.")
+                            .font(.callout).foregroundStyle(.secondary).card()
+                    } else if learnMode {
                         Text("Learn mode: tap a button here, then press the same button on your Sony remote, aimed at the blaster.")
                             .font(.callout)
                             .card()
@@ -32,7 +35,9 @@ struct RemoteView: View {
                             .card()
                     }
                     ForEach(KeyGroup.allCases) { g in
-                        let keys = Keys.all(remote: store.remote).filter { $0.group == g }
+                        let keys = Keys.all(remote: store.remote).filter {
+                            $0.group == g && (store.tv.kind == .sony || AndroidTVTransport.supportsKey($0.id))
+                        }
                         if !keys.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 SectionTitle(text: g.rawValue)
@@ -43,13 +48,17 @@ struct RemoteView: View {
                                                   badge: store.codes[k.id] != nil) {
                                             tap(k)
                                         }
-                                        .contextMenu { RouteMenu(store: store, key: k.id) }
+                                        .contextMenu {
+                                            if store.tv.kind == .sony { RouteMenu(store: store, key: k.id) }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    Text("A dot means the button was learned from your remote. The rest use Sony's codes: the TV's own list over Wi-Fi, turned into SIRC for IR. Long-press any button to send it over Wi-Fi or IR, or to learn it.")
+                    Text(store.tv.kind == .sony
+                         ? "A dot means the button was learned from your remote. The rest use Sony's codes over Wi-Fi or IR."
+                         : "Android TV keys are sent over the paired remote service. ADB is optional for advanced controls.")
                         .font(.caption).foregroundStyle(.white.opacity(0.4))
                     }
                 }
@@ -67,14 +76,18 @@ struct RemoteView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Toggle(isOn: $learnMode) { Label("Learn mode", systemImage: "record.circle") }
-                        .disabled(!store.blaster.isReady)
-                    Toggle(isOn: $irOnly) { Label("Always send IR", systemImage: "dot.radiowaves.right") }
-                        .disabled(!store.blaster.isReady)
+                    if store.tv.kind == .sony {
+                        Toggle(isOn: $learnMode) { Label("Learn mode", systemImage: "record.circle") }
+                            .disabled(!store.blaster.isReady)
+                        Toggle(isOn: $irOnly) { Label("Always send IR", systemImage: "dot.radiowaves.right") }
+                            .disabled(!store.blaster.isReady)
+                    }
                     Button { editingLayout = true } label: { Label("Layout as a list", systemImage: "list.bullet") }
                     Button { importing = true } label: { Label("Import from Redshift", systemImage: "square.and.arrow.down") }
-                    Button { Task { await store.loadLists() } } label: { Label("Reload the TV's buttons", systemImage: "arrow.clockwise") }
-                        .disabled(!store.tv.hasWiFi)
+                    if store.tv.kind == .sony {
+                        Button { Task { await store.loadLists() } } label: { Label("Reload the TV's buttons", systemImage: "arrow.clockwise") }
+                            .disabled(!store.tv.hasWiFi)
+                    }
                 } label: {
                     Image(systemName: learnMode ? "record.circle.fill" : "ellipsis.circle")
                         .foregroundStyle(learnMode ? Color(red: 1, green: 0.45, blue: 0.45) : Theme.accent)
@@ -97,9 +110,9 @@ struct RemoteView: View {
 
     private func tap(_ k: KeyDef) {
         if editing { return }
-        if learnMode {
+        if learnMode && store.tv.kind == .sony {
             store.startLearn(k.id)
-        } else if irOnly {
+        } else if irOnly && store.tv.kind == .sony {
             store.testIR(k.id)
         } else {
             switch k.id {

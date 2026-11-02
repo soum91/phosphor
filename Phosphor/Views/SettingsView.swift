@@ -12,20 +12,35 @@ struct SettingsView: View {
                 Theme.background()
                 List {
                     Section("TV") {
-                        NavigationLink { FindTVView() } label: {
-                            LabeledContent("Wi-Fi", value: store.tv.hasWiFi ? store.tv.host : "Not set")
+                        ForEach(store.directory.devices) { device in
+                            Button { store.selectTV(device.id) } label: {
+                                HStack {
+                                    Image(systemName: "tv").foregroundStyle(Theme.accent)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(device.config.name).foregroundStyle(.white)
+                                        Text(device.config.kind.title + " · " + device.config.host)
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if device.id == store.activeProfileID { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
+                                }
+                            }
                         }
+                        NavigationLink { FindTVView() } label: { Label("Add another TV", systemImage: "plus.circle") }
                         if store.tv.hasWiFi {
                             TextField("Name", text: $store.tv.name)
                             if let m = store.tv.model { LabeledContent("Model", value: m) }
                             if let mac = store.tv.mac, !mac.isEmpty { LabeledContent("MAC", value: mac) }
-                            LabeledContent("Buttons reported", value: "\(store.remote.count)")
+                            LabeledContent("Protocol", value: store.tv.kind.title)
+                            if store.tv.kind == .sony { LabeledContent("Buttons reported", value: "\(store.remote.count)") }
                         }
-                        Picker("Send commands", selection: $store.tv.route) {
-                            ForEach(TVRoute.allCases) { Text($0.title).tag($0) }
+                        if store.tv.kind == .sony {
+                            Picker("Send commands", selection: $store.tv.route) {
+                                ForEach(TVRoute.allCases) { Text($0.title).tag($0) }
+                            }
                         }
                         if store.tv.hasWiFi {
-                            Button("Restart the TV") { confirmReboot = true }
+                            if store.tv.kind == .sony { Button("Restart the TV") { confirmReboot = true } }
                             Button("Forget TV", role: .destructive) { confirmForget = true }
                         }
                     }
@@ -41,7 +56,9 @@ struct SettingsView: View {
                     } header: {
                         Text("IR blaster")
                     } footer: {
-                        Text("Wi-Fi, then IR: tries Sony IP control first and falls back to the blaster when the TV doesn't answer. Power on and off use Sony's separate on/off codes over IR, so it never toggles the wrong way.")
+                        Text(store.tv.kind == .sony
+                             ? "Wi-Fi, then IR: tries Sony IP control first and falls back to the blaster when the TV doesn't answer."
+                             : "The existing IR codes are Sony-specific. Android TVs use the paired Wi-Fi remote; TCL IR codes must be learned separately.")
                     }
 
                     Section {
