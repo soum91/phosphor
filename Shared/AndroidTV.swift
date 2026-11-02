@@ -232,32 +232,120 @@ private final class ServerPublicKey {
 /// Locally generated per-installation RSA identity. Nothing is checked into GitHub.
 /// The key and its certificate live in the app's iOS Keychain.
 private enum AndroidTVIdentity {
+    private static let keyTag = Data("com.soum91.phosphor.androidtv".utf8)
+    private static let certificateLabel = "Obsidian Android TV"
+
     static func loadOrCreate() throws -> SecIdentity {
+        // Prefer the identity we previously paired with. Never rotate a paired key
+        // just because the app was upgraded or the TV is temporarily unreachable.
+        if let saved = findIdentity(label: certificateLabel) { return saved }
+        if let legacy = findIdentity(label: nil) { return legacy }
+
+        // 1.1.0.18 generated a persistent key but added its certificate as raw
+        // bytes. On some iOS keychains this does not create the certificate's
+        // public-key hash, so no kSecClassIdentity item can be formed. Reuse the
+        // existing private key and import a corrected certificate by reference.
+        let privateKey = try existingOrNewKey()
+        let certificate = try makeCertificate(privateKey: privateKey)
+        let add: [CFString: Any] = [
+            kSecClass: kSecClassCertificate,
+            kSecValueRef: certificate,
+            kSecAttrLabel: certificateLabel
+        ]
+        let status = SecItemAdd(add as CFDictionary, nil)
+        guard status == errSecSuccess || status == errSecDuplicateItem else {
+            throw AppError("Couldn't save Android TV certificate (Keychain error \(status)).")
+        }
+
+        if let saved = findIdentity(label: certificateLabel) { return saved }
+        if let saved = findIdentity(label: nil) { return saved }
+
+        // Include the actual keychain attributes in the error rather than making
+        // the user check their Wi-Fi when the failure happened entirely on iOS.
+        let keyQuery: [CFString: Any] = [
+            kSecClass: kSecClassKey,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecAttrApplicationTag: keyTag,
+            kSecReturnAttributes: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        let certQuery: [CFString: Any] = [
+            kSecClass: kSecClassCertificate,
+            kSecAttrLabel: certificateLabel,
+            kSecReturnAttributes: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var keyAttrs: CFTypeRef?
+        var certAttrs: CFTypeRef?
+        let keyStatus = SecItemCopyMatching(keyQuery as CFDictionary, &keyAttrs)
+        let certStatus = SecItemCopyMatching(certQuery as CFDictionary, &certAttrs)
+        let keyHash = (keyAttrs as? [String: Any])?[kSecAttrApplicationLabel as String] as? Data
+        let certHash = (certAttrs as? [String: Any])?[kSecAttrPublicKeyHash as String] as? Data
+        if let keyHash, let certHash, keyHash != certHash {
+            throw AppError("iOS Keychain saved the Android TV key and certificate with different public-key hashes. Please report this pairing error.")
+        }
+        throw AppError("iOS couldn't assemble the Android TV identity (key \(keyStatus), certificate \(certStatus)). Please report this pairing error.")
+    }
+
+    private static func findIdentity(label: String?) -> SecIdentity? {
         let query: [CFString: Any] = [kSecClass: kSecClassIdentity,
                                       kSecMatchLimit: kSecMatchLimitOne,
                                       kSecReturnRef: true]
+        var filtered = query
+        if let label { filtered[kSecAttrLabel] = label }
         var saved: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &saved) == errSecSuccess,
-           let saved, CFGetTypeID(saved) == SecIdentityGetTypeID() { return (saved as! SecIdentity) }
+        guard SecItemCopyMatching(filtered as CFDictionary, &saved) == errSecSuccess,
+              let saved, CFGetTypeID(saved) == SecIdentityGetTypeID() else { return nil }
+        let identity = saved as! SecIdentity
+        var cert: SecCertificate?
+        guard SecIdentityCopyCertificate(identity, &cert) == errSecSuccess,
+              let cert,
+              (SecCertificateCopySubjectSummary(cert) as String?) == "Obsidian Remote" else { return nil }
+        return identity
+    }
 
+    private static func existingOrNewKey() throws -> SecKey {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassKey,
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecAttrApplicationTag: keyTag,
+            kSecReturnRef: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var existing: CFTypeRef?
+        let found = SecItemCopyMatching(query as CFDictionary, &existing)
+        if found == errSecSuccess, let existing,
+           CFGetTypeID(existing) == SecKeyGetTypeID() { return existing as! SecKey }
+        guard found == errSecItemNotFound else {
+            throw AppError("Couldn't read Android TV private key (Keychain error \(found)).")
+        }
         let options: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeRSA,
             kSecAttrKeySizeInBits: 2048,
             kSecPrivateKeyAttrs: [kSecAttrIsPermanent: true,
-                                  kSecAttrApplicationTag: Data("com.soum91.phosphor.androidtv".utf8)]
+                                  kSecAttrApplicationTag: keyTag]
         ]
         var err: Unmanaged<CFError>?
-        guard let privateKey = SecKeyCreateRandomKey(options as CFDictionary, &err),
-              let publicKey = SecKeyCopyPublicKey(privateKey),
-              let pkcs1 = SecKeyCopyExternalRepresentation(publicKey, &err) as Data? else {
+        guard let privateKey = SecKeyCreateRandomKey(options as CFDictionary, &err) else {
             throw AppError("Couldn't generate an Android TV pairing identity.")
+        }
+        return privateKey
+    }
+
+    private static func makeCertificate(privateKey: SecKey) throws -> SecCertificate {
+        var err: Unmanaged<CFError>?
+        guard let publicKey = SecKeyCopyPublicKey(privateKey),
+              let pkcs1 = SecKeyCopyExternalRepresentation(publicKey, &err) as Data? else {
+            throw AppError("Couldn't read the Android TV public key.")
         }
 
         let signatureAlgorithm = asn1(0x30, oid([0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x0b]) + asn1(0x05, Data()))
         let rsaAlgorithm = asn1(0x30, oid([0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01]) + asn1(0x05, Data()))
         let name = asn1(0x30, asn1(0x31, asn1(0x30, oid([0x55,0x04,0x03]) + asn1(0x0c, Data("Obsidian Remote".utf8)))))
         var serial = Data(count: 16)
-        _ = serial.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+        let randomStatus = serial.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+        guard randomStatus == errSecSuccess else { throw AppError("Couldn't generate a certificate serial number.") }
         serial[0] &= 0x7f
         let until = Date().addingTimeInterval(10 * 365 * 24 * 60 * 60)
         let validity = asn1(0x30, time(Date().addingTimeInterval(-86400)) + time(until))
@@ -267,20 +355,10 @@ private enum AndroidTVIdentity {
             throw AppError("Couldn't sign the Android TV certificate.")
         }
         let certificate = asn1(0x30, body + signatureAlgorithm + asn1(0x03, Data([0]) + signature))
-        guard SecCertificateCreateWithData(nil, certificate as CFData) != nil else {
+        guard let secCertificate = SecCertificateCreateWithData(nil, certificate as CFData) else {
             throw AppError("Couldn't create an Android TV certificate.")
         }
-        let add: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecValueData: certificate]
-        let status = SecItemAdd(add as CFDictionary, nil)
-        guard status == errSecSuccess || status == errSecDuplicateItem else {
-            throw AppError("Couldn't save Android TV certificate (\(status)).")
-        }
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let result, CFGetTypeID(result) == SecIdentityGetTypeID() else {
-            throw AppError("Couldn't locate the new Android TV identity in Keychain.")
-        }
-        return (result as! SecIdentity)
+        return secCertificate
     }
 
     private static func oid(_ b: [UInt8]) -> Data { asn1(0x06, Data(b)) }
