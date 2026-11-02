@@ -1,14 +1,19 @@
 package com.soum91.obsidian.tv;
 
 import android.app.Activity;
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -73,6 +78,13 @@ public final class MainActivity extends Activity {
         });
         body.addView(stop);
 
+        TextView remote = text("Internet preview uses an encrypted connection while sharing is active. Enable accessibility control to send Home, Back and navigation commands remotely.", 14, 0xFFB9AFC5);
+        body.addView(remote);
+        Button enableControl = new Button(this);
+        enableControl.setText("Enable remote control in Accessibility");
+        enableControl.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        body.addView(enableControl);
+
         setContentView(body);
     }
 
@@ -133,5 +145,61 @@ public final class MainActivity extends Activity {
             }
         } catch (Exception ignored) { }
         return null;
+    }
+
+    /** Optional, user-enabled Android Accessibility control. No ADB or privileged injection. */
+    public static final class TVAccessibility extends AccessibilityService {
+        private static volatile TVAccessibility instance;
+
+        @Override protected void onServiceConnected() {
+            super.onServiceConnected();
+            AccessibilityServiceInfo info = new AccessibilityServiceInfo();
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                    | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
+            info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
+            info.flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            info.notificationTimeout = 100;
+            setServiceInfo(info);
+            instance = this;
+        }
+
+        @Override public void onDestroy() {
+            if (instance == this) instance = null;
+            super.onDestroy();
+        }
+
+        @Override public void onAccessibilityEvent(AccessibilityEvent event) { }
+        @Override public void onInterrupt() { }
+
+        static boolean execute(String key) {
+            TVAccessibility service = instance;
+            if (service == null) return false;
+            if ("home".equals(key)) return service.performGlobalAction(GLOBAL_ACTION_HOME);
+            if ("back".equals(key)) return service.performGlobalAction(GLOBAL_ACTION_BACK);
+            AccessibilityNodeInfo root = service.getRootInActiveWindow();
+            if (root == null) return false;
+            try {
+                AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+                AccessibilityNodeInfo current = focused == null ? root : focused;
+                if ("ok".equals(key)) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                int direction;
+                switch (key) {
+                    case "up": direction = View.FOCUS_UP; break;
+                    case "down": direction = View.FOCUS_DOWN; break;
+                    case "left": direction = View.FOCUS_LEFT; break;
+                    case "right": direction = View.FOCUS_RIGHT; break;
+                    default: return false;
+                }
+                AccessibilityNodeInfo next = current.focusSearch(direction);
+                if (next == null) return false;
+                try {
+                    return next.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                } finally {
+                    next.recycle();
+                }
+            } finally {
+                root.recycle();
+            }
+        }
     }
 }

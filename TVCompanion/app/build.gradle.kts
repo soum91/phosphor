@@ -22,4 +22,5 @@ android {
 
 dependencies {
     implementation("com.google.zxing:core:3.5.3")
+    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
 }
