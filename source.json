@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.1.0.20",
+          "buildVersion": "20",
+          "date": "2026-11-02T02:56:38Z",
+          "localizedDescription": "- Fix Android TV pairing identity on iOS (5e24580)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-20/Obsidian-1.1.0-build-20.ipa",
+          "size": 2904690,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.1.0.18",
           "buildVersion": "18",
           "date": "2026-11-02T02:44:20Z",
@@ -155,11 +164,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.1.0.18",
-      "versionDate": "2026-11-02T02:44:20Z",
-      "versionDescription": "- Obsidian 1.1: multi-TV profiles and Android TV Remote v2 (0376d44)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-18/Obsidian-1.1.0-build-18.ipa",
-      "size": 2897361,
+      "version": "1.1.0.20",
+      "versionDate": "2026-11-02T02:56:38Z",
+      "versionDescription": "- Fix Android TV pairing identity on iOS (5e24580)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-20/Obsidian-1.1.0-build-20.ipa",
+      "size": 2904690,
       "appPermissions": {}
     }
   ],
