@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.1.0.26",
+          "buildVersion": "26",
+          "date": "2026-11-03T04:05:40Z",
+          "localizedDescription": "- Fix missing Android stream import for remote preview (4c31473)\n- Prototype encrypted MQTT internet preview and remote companion controls (d3508ea)\n- Use explicit installed Android sdkmanager path on GitHub runner (8c2cca3)\n- Use runner Android SDK instead of obsolete SDK tools package (19c5ec3)\n- Prototype encrypted Android TV Live View with QR-paired iOS viewer (8d4bc36)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-26/Obsidian-1.1.0-build-26.ipa",
+          "size": 2972460,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.1.0.20",
           "buildVersion": "20",
           "date": "2026-11-02T02:56:38Z",
@@ -164,11 +173,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.1.0.20",
-      "versionDate": "2026-11-02T02:56:38Z",
-      "versionDescription": "- Fix Android TV pairing identity on iOS (5e24580)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-20/Obsidian-1.1.0-build-20.ipa",
-      "size": 2904690,
+      "version": "1.1.0.26",
+      "versionDate": "2026-11-03T04:05:40Z",
+      "versionDescription": "- Fix missing Android stream import for remote preview (4c31473)\n- Prototype encrypted MQTT internet preview and remote companion controls (d3508ea)\n- Use explicit installed Android sdkmanager path on GitHub runner (8c2cca3)\n- Use runner Android SDK instead of obsolete SDK tools package (19c5ec3)\n- Prototype encrypted Android TV Live View with QR-paired iOS viewer (8d4bc36)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-26/Obsidian-1.1.0-build-26.ipa",
+      "size": 2972460,
       "appPermissions": {}
     }
   ],
