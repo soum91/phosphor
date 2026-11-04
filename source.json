@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.1.0.31",
+          "buildVersion": "31",
+          "date": "2026-11-04T17:57:01Z",
+          "localizedDescription": "- Add TV icon and Accessibility gesture capabilities resources (a103478)\n- Add TV icon and Accessibility gesture capabilities resources (ae8b16a)\n- Add TV icon and Accessibility gesture capabilities resources (e79af1f)\n- Add TV icon and Accessibility gesture capabilities resources (3b92ff1)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-31/Obsidian-1.1.0-build-31.ipa",
+          "size": 2972492,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.1.0.27",
           "buildVersion": "27",
           "date": "2026-11-04T17:47:43Z",
@@ -182,11 +191,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.1.0.27",
-      "versionDate": "2026-11-04T17:47:43Z",
-      "versionDescription": "- Build TV companion with monotonic versionCode for EmberTV releases (15853d5)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-27/Obsidian-1.1.0-build-27.ipa",
-      "size": 2972530,
+      "version": "1.1.0.31",
+      "versionDate": "2026-11-04T17:57:01Z",
+      "versionDescription": "- Add TV icon and Accessibility gesture capabilities resources (a103478)\n- Add TV icon and Accessibility gesture capabilities resources (ae8b16a)\n- Add TV icon and Accessibility gesture capabilities resources (e79af1f)\n- Add TV icon and Accessibility gesture capabilities resources (3b92ff1)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-31/Obsidian-1.1.0-build-31.ipa",
+      "size": 2972492,
       "appPermissions": {}
     }
   ],
