@@ -1,8 +1,8 @@
 {
   "name": "Obsidian by soum91",
   "identifier": "io.github.soum91.phosphor",
-  "subtitle": "Sony and Android / Google TV remote, multi-TV and Live View",
-  "description": "Obsidian controls multiple Sony BRAVIA and Android / Google TVs, including TCL. Features Sony IP Control with IR fallback, Android TV Remote v2 pairing, power, volume, inputs, apps, widgets, Control Center, Siri and per-TV settings. The Live tab adds opt-in screen viewing using Obsidian TV Companion, with encrypted low-rate internet preview as a beta feature. Protected video and HDMI input may not be visible.",
+  "subtitle": "Sony Bravia OLED remote over Wi-Fi, IR and ADB",
+  "description": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
   "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
   "website": "https://github.com/soum91/phosphor",
   "sourceURL": "https://raw.githubusercontent.com/soum91/phosphor/source/source.json",
@@ -12,13 +12,22 @@
       "name": "Obsidian",
       "bundleIdentifier": "com.soum91.phosphor",
       "developerName": "soum91",
-      "subtitle": "Sony and Android / Google TV remote, multi-TV and Live View",
-      "localizedDescription": "Obsidian controls multiple Sony BRAVIA and Android / Google TVs, including TCL. Features Sony IP Control with IR fallback, Android TV Remote v2 pairing, power, volume, inputs, apps, widgets, Control Center, Siri and per-TV settings. The Live tab adds opt-in screen viewing using Obsidian TV Companion, with encrypted low-rate internet preview as a beta feature. Protected video and HDMI input may not be visible.",
+      "subtitle": "Sony Bravia OLED remote over Wi-Fi, IR and ADB",
+      "localizedDescription": "Controls a Sony Bravia straight over Wi-Fi (Sony IP control and IRCC) with the Tuya IR blaster as fallback: power, volume, inputs, apps, every remote button, typing, picture and sound settings, screen off, presets, Cast now playing, widgets including a one-button widget, Control Center and Siri.",
       "iconURL": "https://raw.githubusercontent.com/soum91/phosphor/main/Phosphor/Assets.xcassets/AppIcon.appiconset/icon.png",
       "tintColor": "B885FF",
       "category": "utilities",
       "screenshotURLs": [],
       "versions": [
+        {
+          "version": "1.1.0.27",
+          "buildVersion": "27",
+          "date": "2026-11-04T17:47:43Z",
+          "localizedDescription": "- Build TV companion with monotonic versionCode for EmberTV releases (15853d5)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-27/Obsidian-1.1.0-build-27.ipa",
+          "size": 2972530,
+          "minOSVersion": "18.0"
+        },
         {
           "version": "1.1.0.26",
           "buildVersion": "26",
@@ -173,11 +182,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.1.0.26",
-      "versionDate": "2026-11-03T04:05:40Z",
-      "versionDescription": "- Fix missing Android stream import for remote preview (4c31473)\n- Prototype encrypted MQTT internet preview and remote companion controls (d3508ea)\n- Use explicit installed Android sdkmanager path on GitHub runner (8c2cca3)\n- Use runner Android SDK instead of obsolete SDK tools package (19c5ec3)\n- Prototype encrypted Android TV Live View with QR-paired iOS viewer (8d4bc36)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-26/Obsidian-1.1.0-build-26.ipa",
-      "size": 2972460,
+      "version": "1.1.0.27",
+      "versionDate": "2026-11-04T17:47:43Z",
+      "versionDescription": "- Build TV companion with monotonic versionCode for EmberTV releases (15853d5)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-27/Obsidian-1.1.0-build-27.ipa",
+      "size": 2972530,
       "appPermissions": {}
     }
   ],
