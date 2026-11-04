@@ -173,10 +173,21 @@ final class ViewerServer {
             } else if ("status".equals(action)) {
                 response.put("c", 200);
                 response.put("b", "Screen sharing approved on TV");
-            } else if ("command".equals(action)) {
-                boolean accepted = control(request.optString("k", ""));
-                response.put("c", accepted ? 200 : 409);
-                response.put("b", accepted ? "OK" : "Enable Obsidian accessibility control on the TV");
+            } else if ("command".equals(action) || "tap".equals(action) || "swipe".equals(action)) {
+                boolean accepted;
+                if ("command".equals(action)) {
+                    accepted = control(request.optString("k", ""));
+                } else {
+                    boolean swipe = "swipe".equals(action);
+                    accepted = MainActivity.TVAccessibility.gesture(
+                            request.optDouble("x", Double.NaN),
+                            request.optDouble("y", Double.NaN),
+                            swipe ? request.optDouble("x2", Double.NaN) : null,
+                            swipe ? request.optDouble("y2", Double.NaN) : null,
+                            request.optInt("ms", 300));
+                }
+                response.put("c", accepted ? 200 : (MainActivity.TVAccessibility.isActive() ? 422 : 409));
+                response.put("b", controlMessage(accepted));
             } else {
                 response.put("c", 400);
                 response.put("b", "Unknown request");
@@ -202,19 +213,33 @@ final class ViewerServer {
         Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
         if (bitmap == null) return null;
         try {
-            int width = Math.min(480, bitmap.getWidth());
-            int height = Math.max(2, bitmap.getHeight() * width / bitmap.getWidth());
-            Bitmap scaled = Bitmap.createScaledBitmap(bitmap, width, height, true);
-            try {
-                ByteArrayOutputStream output = new ByteArrayOutputStream();
-                scaled.compress(Bitmap.CompressFormat.JPEG, 35, output);
-                return output.size() <= 48_000 ? output.toByteArray() : null;
-            } finally {
-                if (scaled != bitmap) scaled.recycle();
+            // Keep encrypted MQTT responses below public-broker message limits.
+            // Prefer a sharper preview when it still fits the fixed 48 KB budget.
+            for (int width : new int[] { 640, 560, 480 }) {
+                int scaledWidth = Math.min(width, bitmap.getWidth());
+                int height = Math.max(2, bitmap.getHeight() * scaledWidth / bitmap.getWidth());
+                Bitmap scaled = Bitmap.createScaledBitmap(bitmap, scaledWidth, height, true);
+                try {
+                    for (int quality : new int[] { 48, 35 }) {
+                        ByteArrayOutputStream output = new ByteArrayOutputStream(49_000);
+                        scaled.compress(Bitmap.CompressFormat.JPEG, quality, output);
+                        if (output.size() <= 48_000) return output.toByteArray();
+                    }
+                } finally {
+                    if (scaled != bitmap) scaled.recycle();
+                }
             }
+            return null;
         } finally {
             bitmap.recycle();
         }
+    }
+
+    private static String controlMessage(boolean accepted) {
+        if (accepted) return "OK";
+        return MainActivity.TVAccessibility.isActive()
+                ? "The current TV screen cannot perform that control; try touch or Home/Back"
+                : "Obsidian Accessibility service is not connected. Disable and re-enable it in TV Settings.";
     }
 
     private boolean control(String key) {
@@ -256,7 +281,15 @@ final class ViewerServer {
             String request = input.readLine();
             if (request == null || request.length() > 1024) return;
             String[] parts = request.split(" ");
-            if (parts.length != 3 || !parts[0].equals("GET") || !parts[1].equals("/frame")) {
+            if (parts.length != 3 || !parts[0].equals("GET")) {
+                respond(connection, 404, "text/plain", "Not found".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+            String path = parts[1];
+            boolean frame = "/frame".equals(path);
+            boolean command = path.startsWith("/control?");
+            boolean touch = path.startsWith("/tap?") || path.startsWith("/swipe?");
+            if (!frame && !command && !touch) {
                 respond(connection, 404, "text/plain", "Not found".getBytes(StandardCharsets.UTF_8));
                 return;
             }
@@ -268,8 +301,26 @@ final class ViewerServer {
                 int colon = line.indexOf(':');
                 if (colon > 0) headers.put(line.substring(0, colon).trim().toLowerCase(Locale.ROOT), line.substring(colon + 1).trim());
             }
-            if (!authenticate(headers)) {
+            if (!authenticate(headers, path)) {
                 respond(connection, 403, "text/plain", "Not authorized".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+            if (!frame) {
+                Map<String, String> params = parseQuery(path);
+                boolean accepted;
+                if (command) {
+                    accepted = control(params.getOrDefault("k", ""));
+                } else {
+                    boolean swipe = path.startsWith("/swipe?");
+                    accepted = MainActivity.TVAccessibility.gesture(
+                            number(params.get("x")), number(params.get("y")),
+                            swipe ? number(params.get("x2")) : null,
+                            swipe ? number(params.get("y2")) : null,
+                            300);
+                }
+                int code = accepted ? 200 : (MainActivity.TVAccessibility.isActive() ? 422 : 409);
+                respond(connection, code, "text/plain",
+                        controlMessage(accepted).getBytes(StandardCharsets.UTF_8));
                 return;
             }
             byte[] jpeg = latest.get();
@@ -277,21 +328,30 @@ final class ViewerServer {
                 respond(connection, 503, "text/plain", "Waiting for TV screen".getBytes(StandardCharsets.UTF_8));
                 return;
             }
-            byte[] nonce = new byte[12];
-            random.nextBytes(nonce);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(secret, "AES"), new GCMParameterSpec(128, nonce));
-            byte[] ciphertext = cipher.doFinal(jpeg);
-            byte[] combined = new byte[nonce.length + ciphertext.length];
-            System.arraycopy(nonce, 0, combined, 0, nonce.length);
-            System.arraycopy(ciphertext, 0, combined, nonce.length, ciphertext.length);
-            respond(connection, 200, "application/octet-stream", combined);
+            respond(connection, 200, "application/octet-stream", encrypt(jpeg));
         } catch (Exception error) {
             android.util.Log.d("ObsidianLive", "Viewer disconnected: " + error.getClass().getSimpleName());
         }
     }
 
-    private boolean authenticate(Map<String, String> headers) {
+    private static Map<String, String> parseQuery(String path) {
+        Map<String, String> result = new HashMap<>();
+        int start = path.indexOf('?');
+        if (start < 0) return result;
+        for (String part : path.substring(start + 1).split("&")) {
+            String[] pair = part.split("=", 2);
+            if (pair.length == 2 && pair[0].matches("[a-z][a-z0-9]{0,2}") &&
+                    pair[1].matches("[a-z0-9._-]{1,20}")) result.put(pair[0], pair[1]);
+        }
+        return result;
+    }
+
+    private static double number(String value) {
+        try { return Double.parseDouble(value); }
+        catch (Exception ignored) { return Double.NaN; }
+    }
+
+    private boolean authenticate(Map<String, String> headers, String path) {
         try {
             String seconds = headers.get("x-obsidian-time");
             String nonce = headers.get("x-obsidian-nonce");
@@ -299,17 +359,22 @@ final class ViewerServer {
             if (seconds == null || nonce == null || proof == null || nonce.length() > 64) return false;
             long stamp = Long.parseLong(seconds);
             if (Math.abs(System.currentTimeMillis() / 1000 - stamp) > 60) return false;
-            String signed = "GET\n/frame\n" + seconds + "\n" + nonce;
+            String signed = "GET\n" + path + "\n" + seconds + "\n" + nonce;
             Mac hmac = Mac.getInstance("HmacSHA256");
             hmac.init(new SecretKeySpec(secret, "HmacSHA256"));
             byte[] expected = hmac.doFinal(signed.getBytes(StandardCharsets.UTF_8));
             byte[] supplied = Base64.getUrlDecoder().decode(proof);
-            return MessageDigest.isEqual(expected, supplied);
+            if (!MessageDigest.isEqual(expected, supplied)) return false;
+            synchronized (seenRequests) {
+                if (!seenRequests.add("lan:" + nonce)) return false;
+                if (seenRequests.size() > 100) seenRequests.remove(seenRequests.iterator().next());
+            }
+            return true;
         } catch (Exception ignored) { return false; }
     }
 
     private void respond(Socket socket, int code, String mime, byte[] bytes) throws Exception {
-        String phrase = code == 200 ? "OK" : code == 503 ? "Service Unavailable" : code == 403 ? "Forbidden" : "Not Found";
+        String phrase = code == 200 ? "OK" : code == 503 ? "Service Unavailable" : code == 403 ? "Forbidden" : code == 409 ? "Conflict" : code == 422 ? "Unprocessable Entity" : "Not Found";
         String header = "HTTP/1.1 " + code + " " + phrase + "\r\n"
                 + "Content-Type: " + mime + "\r\n"
                 + "Content-Length: " + bytes.length + "\r\n"
