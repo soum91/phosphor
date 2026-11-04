@@ -9,6 +9,10 @@ on:
     paths: ["TVCompanion/**", ".github/workflows/tv-companion.yml"]
   workflow_dispatch:
 
+concurrency:
+  group: obsidian-tv-companion-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
