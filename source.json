@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.1.0.34",
+          "buildVersion": "34",
+          "date": "2026-11-04T18:00:06Z",
+          "localizedDescription": "- Add HMAC-authenticated LAN tap/swipe controls and improve encrypted remote preview (52f05b9)\n- Repair Accessibility service lifecycle and enable authenticated remote tap/swipe gestures (68aa02d)\n- Expose TV launcher artwork and Accessibility gestures metadata (b002322)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-34/Obsidian-1.1.0-build-34.ipa",
+          "size": 2972466,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.1.0.31",
           "buildVersion": "31",
           "date": "2026-11-04T17:57:01Z",
@@ -191,11 +200,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.1.0.31",
-      "versionDate": "2026-11-04T17:57:01Z",
-      "versionDescription": "- Add TV icon and Accessibility gesture capabilities resources (a103478)\n- Add TV icon and Accessibility gesture capabilities resources (ae8b16a)\n- Add TV icon and Accessibility gesture capabilities resources (e79af1f)\n- Add TV icon and Accessibility gesture capabilities resources (3b92ff1)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-31/Obsidian-1.1.0-build-31.ipa",
-      "size": 2972492,
+      "version": "1.1.0.34",
+      "versionDate": "2026-11-04T18:00:06Z",
+      "versionDescription": "- Add HMAC-authenticated LAN tap/swipe controls and improve encrypted remote preview (52f05b9)\n- Repair Accessibility service lifecycle and enable authenticated remote tap/swipe gestures (68aa02d)\n- Expose TV launcher artwork and Accessibility gestures metadata (b002322)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-34/Obsidian-1.1.0-build-34.ipa",
+      "size": 2972466,
       "appPermissions": {}
     }
   ],
