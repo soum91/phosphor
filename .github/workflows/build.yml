@@ -3,11 +3,27 @@ name: Build unsigned IPA
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md"]
+    paths:
+      - "Phosphor/**"
+      - "PhosphorWidget/**"
+      - "Shared/**"
+      - "project.yml"
+      - ".github/workflows/build.yml"
+      - ".github/scripts/**"
   pull_request:
     branches: [main]
-    paths-ignore: ["**.md"]
+    paths:
+      - "Phosphor/**"
+      - "PhosphorWidget/**"
+      - "Shared/**"
+      - "project.yml"
+      - ".github/workflows/build.yml"
+      - ".github/scripts/**"
   workflow_dispatch:
+
+concurrency:
+  group: obsidian-ios-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
