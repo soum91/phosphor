@@ -10,8 +10,10 @@ android {
         applicationId = "com.soum91.obsidian.tv"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        val buildNumber = providers.gradleProperty("OBSIDIAN_BUILD_NUMBER")
+            .orNull?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+        versionCode = buildNumber
+        versionName = "0.1.0.$buildNumber"
     }
 
     compileOptions {
