@@ -89,7 +89,7 @@ final class LiveViewClient: ObservableObject {
                         usingRelay = false
                     } catch {
                         // Cellular, VPN and other networks may not route to the TV's LAN address.
-                        retryLANAfter = Date().addingTimeInterval(30)
+                        retryLANAfter = Date().addingTimeInterval(8)
                         usingRelay = true
                         clear = try await ObsidianRelay.shared.request(host: host, secret: secret, action: "frame")
                     }
@@ -100,10 +100,10 @@ final class LiveViewClient: ObservableObject {
                 guard let frame = UIImage(data: clear) else { throw LiveViewError("TV sent an unreadable frame.") }
                 image = frame
                 connected = true
-                message = usingRelay ? "Encrypted internet preview · \(host) · Reduced frame rate"
+                message = usingRelay ? "Encrypted internet preview · \(host) · Optimized JPEG frames"
                     : "Live from \(host) · Local network"
                 if usingRelay {
-                    try await Task.sleep(for: .milliseconds(1500))
+                    try await Task.sleep(for: .milliseconds(600))
                 } else {
                     try await Task.sleep(for: .milliseconds(180))
                 }
@@ -117,7 +117,7 @@ final class LiveViewClient: ObservableObject {
         }
     }
 
-    private func localFrame(url: URL, key: SymmetricKey) async throws -> Data {
+    private func authorizedRequest(url: URL, key: SymmetricKey) throws -> URLRequest {
         let time = String(Int(Date().timeIntervalSince1970))
         var nonceBytes = Data(count: 16)
         let randomResult = nonceBytes.withUnsafeMutableBytes {
@@ -125,16 +125,57 @@ final class LiveViewClient: ObservableObject {
         }
         guard randomResult == errSecSuccess else { throw LiveViewError("Couldn't generate request nonce.") }
         let nonce = nonceBytes.base64URLEncodedString()
-        let signed = Data("GET\n/frame\n\(time)\n\(nonce)".utf8)
+        let path = url.path + (url.query.map { "?" + $0 } ?? "")
+        let signed = Data("GET\n\(path)\n\(time)\n\(nonce)".utf8)
         let mac = Data(HMAC<SHA256>.authenticationCode(for: signed, using: key)).base64URLEncodedString()
         var request = URLRequest(url: url)
         request.setValue(time, forHTTPHeaderField: "X-Obsidian-Time")
         request.setValue(nonce, forHTTPHeaderField: "X-Obsidian-Nonce")
         request.setValue(mac, forHTTPHeaderField: "X-Obsidian-Mac")
+        return request
+    }
+
+    private func localFrame(url: URL, key: SymmetricKey) async throws -> Data {
+        let request = try authorizedRequest(url: url, key: key)
         let (encrypted, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw LiveViewError("Unexpected TV response.") }
         guard http.statusCode == 200 else { throw LiveViewError("Local screen capture HTTP \(http.statusCode)") }
         return try AES.GCM.open(AES.GCM.SealedBox(combined: encrypted), using: key)
+    }
+
+    private func localGesture(host: String, key: SymmetricKey, path: String) async throws {
+        guard let url = URL(string: "http://\(host):8765\(path)") else {
+            throw LiveViewError("Invalid TV address.")
+        }
+        let request = try authorizedRequest(url: url, key: key)
+        let (body, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw LiveViewError("No TV response.") }
+        guard http.statusCode == 200 else {
+            let detail = String(data: body, encoding: .utf8) ?? "TV returned \(http.statusCode)"
+            throw LiveViewError(detail)
+        }
+    }
+
+    func touch(host: String, x: Double, y: Double, x2: Double? = nil, y2: Double? = nil) async {
+        guard let secret = LiveViewSecret.load(host: host),
+              (0...1).contains(x), (0...1).contains(y) else { return }
+        let swipe = x2 != nil && y2 != nil
+        if swipe && (!(0...1).contains(x2!) || !(0...1).contains(y2!)) { return }
+        var path = swipe ? "/swipe?" : "/tap?"
+        path += "x=\(x)&y=\(y)"
+        if swipe { path += "&x2=\(x2!)&y2=\(y2!)" }
+        do {
+            if usingRelay {
+                var coordinates = ["x": x, "y": y]
+                if swipe { coordinates["x2"] = x2!; coordinates["y2"] = y2! }
+                _ = try await ObsidianRelay.shared.request(host: host, secret: secret,
+                    action: swipe ? "swipe" : "tap", coordinates: coordinates)
+            } else {
+                try await localGesture(host: host, key: SymmetricKey(data: secret), path: path)
+            }
+        } catch {
+            message = "Touch: \(error.localizedDescription)"
+        }
     }
 
     func command(_ key: String, host: String) async {
@@ -178,7 +219,7 @@ private actor ObsidianRelay {
     private var pending: [String: CheckedContinuation<(Int, String), Error>] = [:]
     private var key: SymmetricKey?
 
-    func request(host: String, secret: Data, action: String, command: String? = nil) async throws -> Data {
+    func request(host: String, secret: Data, action: String, command: String? = nil, coordinates: [String: Double]? = nil) async throws -> Data {
         guard secret.count == 32, LiveViewSecret.isLocalIPv4(host) else {
             throw LiveViewError("Pair this TV locally first.")
         }
@@ -190,6 +231,7 @@ private actor ObsidianRelay {
             "i": requestID, "t": Int(Date().timeIntervalSince1970), "a": action
         ]
         if let command { object["k"] = command }
+        if let coordinates { for (name, value) in coordinates { object[name] = value } }
         let plain = try JSONSerialization.data(withJSONObject: object)
         let encrypted = try AES.GCM.seal(plain, using: key).combined!.base64EncodedData()
         let packet = Self.publish(topic: "obsidian/\(id)/req", payload: encrypted)
@@ -395,17 +437,45 @@ struct LiveView: View {
                             .foregroundStyle(client.connected ? .green : .secondary)
                     }
 
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 15).fill(.black)
-                        if let image = client.image {
-                            Image(uiImage: image)
-                                .resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 15))
-                        } else {
-                            Image(systemName: "tv.slash")
-                                .font(.system(size: 42)).foregroundStyle(.secondary)
+                    GeometryReader { surface in
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 15).fill(.black)
+                            if let image = client.image {
+                                Image(uiImage: image)
+                                    .resizable().scaledToFit()
+                                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                            } else {
+                                Image(systemName: "tv.slash")
+                                    .font(.system(size: 42)).foregroundStyle(.secondary)
+                            }
                         }
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onEnded { gesture in
+                                guard client.connected else { return }
+                                let width = max(surface.size.width, 1)
+                                let height = max(surface.size.height, 1)
+                                func normalized(_ value: CGFloat, _ range: CGFloat) -> Double {
+                                    min(1, max(0, Double(value / range)))
+                                }
+                                let x = normalized(gesture.startLocation.x, width)
+                                let y = normalized(gesture.startLocation.y, height)
+                                let drag = hypot(gesture.translation.width, gesture.translation.height)
+                                if drag > 20 {
+                                    let endX = normalized(gesture.location.x, width)
+                                    let endY = normalized(gesture.location.y, height)
+                                    Task { await client.touch(host: store.tv.host,
+                                                              x: x, y: y, x2: endX, y2: endY) }
+                                } else {
+                                    Task { await client.touch(host: store.tv.host, x: x, y: y) }
+                                }
+                            })
                     }
                     .aspectRatio(16/9, contentMode: .fit)
+
+                    Text("Tap the TV preview to select, or drag to swipe. Navigation keys remain below.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
 
                     Text(client.message).font(.callout).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -428,7 +498,7 @@ struct LiveView: View {
                         action("chevron.down", "Down") { command("down") { store.perform(.key("Down")) } }
                     }
                     .padding().background(Theme.card, in: RoundedRectangle(cornerRadius: 20))
-                    Text("Approve each screen sharing session on the TV. For internet buttons, enable Obsidian in TV Accessibility settings. Directional navigation depends on the app's accessible focus. Internet preview is a low-rate prototype, not WebRTC yet. DRM and HDMI video may be black.")
+                    Text("Screen capture requires TV approval for each new session. Tap and swipe require Obsidian Accessibility enabled. The internet preview is low frame rate; use the same Wi-Fi for faster viewing. DRM and HDMI sources may appear black.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(20)
