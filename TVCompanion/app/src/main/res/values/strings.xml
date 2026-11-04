@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Obsidian TV Companion</string>
+    <string name="remote_control_description">Allow paired Obsidian iPhone devices to navigate and tap the TV screen while remote control is enabled.</string>
+</resources>
