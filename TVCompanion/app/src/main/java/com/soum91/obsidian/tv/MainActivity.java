@@ -3,10 +3,15 @@ package com.soum91.obsidian.tv;
 import android.app.Activity;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.accessibilityservice.GestureDescription;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Path;
+import android.graphics.Point;
+import android.hardware.display.DisplayManager;
+import android.view.Display;
 import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -90,7 +95,11 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (status != null && CaptureService.active) status.setText("Live View is active on your local network.");
+        if (status != null) {
+            String captureState = CaptureService.active ? "Live View is active." : "Screen sharing is off.";
+            String controlState = TVAccessibility.isActive() ? " Remote control enabled." : " Enable Obsidian Remote Control in Accessibility for touch and navigation.";
+            status.setText(captureState + controlState);
+        }
     }
 
     private void requestCapture() {
@@ -147,20 +156,31 @@ public final class MainActivity extends Activity {
         return null;
     }
 
-    /** Optional, user-enabled Android Accessibility control. No ADB or privileged injection. */
+    /** Opt-in Android Accessibility actions, usable only after owner enables the service. */
     public static final class TVAccessibility extends AccessibilityService {
         private static volatile TVAccessibility instance;
 
+        static boolean isActive() { return instance != null; }
+
         @Override protected void onServiceConnected() {
             super.onServiceConnected();
-            AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-                    | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
-            info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
-            info.flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
-            info.notificationTimeout = 100;
-            setServiceInfo(info);
+            AccessibilityServiceInfo info = getServiceInfo();
+            if (info != null) {
+                info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                        | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                        | AccessibilityEvent.TYPE_VIEW_FOCUSED;
+                info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
+                info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+                info.notificationTimeout = 100;
+                setServiceInfo(info);
+            }
             instance = this;
+            android.util.Log.i("ObsidianLive", "Accessibility remote connected");
+        }
+
+        @Override public boolean onUnbind(Intent intent) {
+            if (instance == this) instance = null;
+            return super.onUnbind(intent);
         }
 
         @Override public void onDestroy() {
@@ -178,10 +198,29 @@ public final class MainActivity extends Activity {
             if ("back".equals(key)) return service.performGlobalAction(GLOBAL_ACTION_BACK);
             AccessibilityNodeInfo root = service.getRootInActiveWindow();
             if (root == null) return false;
+            AccessibilityNodeInfo current = null;
             try {
-                AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-                AccessibilityNodeInfo current = focused == null ? root : focused;
-                if ("ok".equals(key)) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                current = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
+                if (current == null) current = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+                if (current == null) current = root;
+                if ("ok".equals(key)) {
+                    if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                    AccessibilityNodeInfo parent = current.getParent();
+                    for (int depth = 0; depth < 3 && parent != null; depth++) {
+                        try {
+                            if (parent.isClickable() &&
+                                    parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                            AccessibilityNodeInfo above = parent.getParent();
+                            parent.recycle();
+                            parent = above;
+                        } catch (RuntimeException e) {
+                            parent.recycle();
+                            return false;
+                        }
+                    }
+                    if (parent != null) parent.recycle();
+                    return false;
+                }
                 int direction;
                 switch (key) {
                     case "up": direction = View.FOCUS_UP; break;
@@ -193,13 +232,50 @@ public final class MainActivity extends Activity {
                 AccessibilityNodeInfo next = current.focusSearch(direction);
                 if (next == null) return false;
                 try {
-                    return next.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                    return next.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
+                            || next.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
                 } finally {
                     next.recycle();
                 }
             } finally {
+                if (current != null && current != root) current.recycle();
                 root.recycle();
             }
+        }
+
+        /** Coordinates are fractions of the TV's actual screen, never raw remote pixels. */
+        static boolean gesture(double x, double y, Double toX, Double toY, int durationMs) {
+            TVAccessibility service = instance;
+            if (service == null || !inside(x) || !inside(y) ||
+                    (toX != null && !inside(toX)) || (toY != null && !inside(toY))) return false;
+            try {
+                DisplayManager manager =
+                        (DisplayManager) service.getSystemService(Context.DISPLAY_SERVICE);
+                Display screen = manager == null ? null : manager.getDisplay(Display.DEFAULT_DISPLAY);
+                if (screen == null) return false;
+                Point size = new Point();
+                screen.getRealSize(size);
+                if (size.x < 2 || size.y < 2) return false;
+
+                Path path = new Path();
+                path.moveTo((float) (x * (size.x - 1)), (float) (y * (size.y - 1)));
+                boolean swipe = toX != null && toY != null;
+                if (swipe) path.lineTo((float) (toX * (size.x - 1)),
+                        (float) (toY * (size.y - 1)));
+                GestureDescription gesture = new GestureDescription.Builder()
+                        .addStroke(new GestureDescription.StrokeDescription(
+                                path, 0, swipe ? Math.max(120, Math.min(1200, durationMs)) : 90))
+                        .build();
+                return service.dispatchGesture(gesture, null, null);
+            } catch (RuntimeException e) {
+                android.util.Log.w("ObsidianLive", "Touch gesture rejected", e);
+                return false;
+            }
+        }
+
+        private static boolean inside(double value) {
+            return !Double.isNaN(value) && !Double.isInfinite(value)
+                    && value >= 0 && value <= 1;
         }
     }
 }
