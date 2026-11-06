@@ -20,6 +20,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.1.0.37",
+          "buildVersion": "37",
+          "date": "2026-11-06T20:58:57Z",
+          "localizedDescription": "- Enforce visible installed version/build across app releases (1322f00)\n- Show actual installed app version and build in UI (5f09716)\n- Fix Android Accessibility service XML resource linking for TV companion (ada548b)\n- Cancel superseded Android TV companion CI builds (6ba097d)\n- Only rebuild iOS for iOS changes; cancel superseded Obsidian IPA builds (4b3ef3f)\n- Add touch and swipe control to Live preview with faster LAN and relay pacing (a781c6b)",
+          "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-37/Obsidian-1.1.0-build-37.ipa",
+          "size": 2982236,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.1.0.32",
           "buildVersion": "32",
           "date": "2026-11-04T18:09:28Z",
@@ -218,11 +227,11 @@
           "minOSVersion": "18.0"
         }
       ],
-      "version": "1.1.0.32",
-      "versionDate": "2026-11-04T18:09:28Z",
-      "versionDescription": "- Expose TV launcher artwork and Accessibility gestures metadata (b002322)",
-      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-32/Obsidian-1.1.0-build-32.ipa",
-      "size": 2972764,
+      "version": "1.1.0.37",
+      "versionDate": "2026-11-06T20:58:57Z",
+      "versionDescription": "- Enforce visible installed version/build across app releases (1322f00)\n- Show actual installed app version and build in UI (5f09716)\n- Fix Android Accessibility service XML resource linking for TV companion (ada548b)\n- Cancel superseded Android TV companion CI builds (6ba097d)\n- Only rebuild iOS for iOS changes; cancel superseded Obsidian IPA builds (4b3ef3f)\n- Add touch and swipe control to Live preview with faster LAN and relay pacing (a781c6b)",
+      "downloadURL": "https://github.com/soum91/phosphor/releases/download/build-37/Obsidian-1.1.0-build-37.ipa",
+      "size": 2982236,
       "appPermissions": {}
     }
   ],
