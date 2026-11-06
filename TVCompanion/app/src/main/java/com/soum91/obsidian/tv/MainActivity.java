@@ -90,6 +90,14 @@ public final class MainActivity extends Activity {
         enableControl.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         body.addView(enableControl);
 
+        try {
+            android.content.pm.PackageInfo installed = getPackageManager().getPackageInfo(getPackageName(), 0);
+            long build = android.os.Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
+            body.addView(text("Installed version " + installed.versionName + " (build " + build + ")", 12, 0xFFB9AFC5));
+        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+            body.addView(text("Installed version Unknown", 12, 0xFFB9AFC5));
+        }
+
         setContentView(body);
     }
 
