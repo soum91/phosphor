@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "name": "iOS app",
+      "evidence": [
+        {
+          "path": "Phosphor/Views/SettingsView.swift",
+          "contains": [
+            "LabeledContent(\"Version\"",
+            "CFBundleVersion",
+            "AppGroup.version"
+          ]
+        },
+        {
+          "path": "Shared/AppGroup.swift",
+          "contains": [
+            "CFBundleShortVersionString"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Android TV companion",
+      "evidence": [
+        {
+          "path": "TVCompanion/app/src/main/java/com/soum91/obsidian/tv/MainActivity.java",
+          "contains": [
+            "Installed version",
+            "getPackageInfo",
+            "versionName"
+          ]
+        }
+      ]
+    }
+  ]
+}
